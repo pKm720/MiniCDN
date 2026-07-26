@@ -5,9 +5,13 @@ const path = require('path');
 const http = require('http');
 const logger = require('../../shared/logger');
 
-const CACHE_DIR = path.join(__dirname, '../cache');
-if (!fs.existsSync(CACHE_DIR)) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
+function getCacheDir() {
+  const edgeId = process.env.EDGE_ID || 1;
+  const cacheDir = path.join(__dirname, `../cache/edge_${edgeId}`);
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  }
+  return cacheDir;
 }
 
 const ORIGIN_HOST = process.env.ORIGIN_HOST || 'localhost';
@@ -16,7 +20,8 @@ const ORIGIN_PORT = process.env.PORT_ORIGIN || 4000;
 router.get('/file/:id', (req, res) => {
   const startTime = Date.now();
   const fileId = req.params.id;
-  const cachePath = path.join(CACHE_DIR, String(fileId));
+  const cacheDir = getCacheDir();
+  const cachePath = path.join(cacheDir, String(fileId));
 
   // Step 1: Check Local Cache Hit
   if (fs.existsSync(cachePath)) {
@@ -69,7 +74,7 @@ router.get('/file/:id', (req, res) => {
     }
 
     // Stream to temporary file to avoid incomplete cache entries on crash/error
-    const tempCachePath = path.join(CACHE_DIR, `${fileId}.tmp`);
+    const tempCachePath = path.join(cacheDir, `${fileId}.tmp`);
     const fileWriteStream = fs.createWriteStream(tempCachePath);
 
     originRes.pipe(fileWriteStream);

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -14,6 +12,68 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  origin:
+    build: .
+    container_name: minicdn-origin
+    command: npm run start:origin
+    environment:
+      PORT_ORIGIN: 4000
+      PGHOST: postgres
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./origin/storage:/app/origin/storage
+
+  edge1:
+    build: .
+    container_name: minicdn-edge-1
+    command: npm run start:edge
+    environment:
+      EDGE_ID: 1
+      PORT_EDGE: 3001
+      ORIGIN_HOST: origin
+      PORT_ORIGIN: 4000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - origin
+    volumes:
+      - ./edge/cache/edge_1:/app/edge/cache/edge_1
+
+  edge2:
+    build: .
+    container_name: minicdn-edge-2
+    command: npm run start:edge
+    environment:
+      EDGE_ID: 2
+      PORT_EDGE: 3002
+      ORIGIN_HOST: origin
+      PORT_ORIGIN: 4000
+    ports:
+      - "3002:3002"
+    depends_on:
+      - origin
+    volumes:
+      - ./edge/cache/edge_2:/app/edge/cache/edge_2
+
+  edge3:
+    build: .
+    container_name: minicdn-edge-3
+    command: npm run start:edge
+    environment:
+      EDGE_ID: 3
+      PORT_EDGE: 3003
+      ORIGIN_HOST: origin
+      PORT_ORIGIN: 4000
+    ports:
+      - "3003:3003"
+    depends_on:
+      - origin
+    volumes:
+      - ./edge/cache/edge_3:/app/edge/cache/edge_3
 
 volumes:
   postgres_data:

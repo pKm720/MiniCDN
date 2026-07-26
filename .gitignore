@@ -3,8 +3,17 @@ node_modules/
 
 # Environment variables
 .env
-.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 !.env.example
+
+# Runtime Payload Storage & Disk Cache
+origin/storage/*
+!origin/storage/.gitkeep
+edge/cache/*
+!edge/cache/.gitkeep
 
 # Logs
 logs/
@@ -14,41 +23,15 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Runtime files
-pids/
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage
-coverage/
-
-# Build output
-dist/
-build/
-
-# Temporary files
-tmp/
-temp/
-
-# OS files
+# OS & IDE artifacts
 .DS_Store
 Thumbs.db
-
-# IDE files
 .vscode/
 .idea/
 
-# Cache
-.cache/
-.parcel-cache/
-
-# Database files (if using SQLite)
-*.sqlite
-*.sqlite3
-
-# Uploads (if generated at runtime)
-uploads/
-
-# Misc
-*.tgz
+# Temporary & Build Output
+tmp/
+temp/
+dist/
+build/
+coverage/
