@@ -15,3 +15,12 @@ CREATE TABLE IF NOT EXISTS edges (
   status TEXT DEFAULT 'healthy',
   last_seen TIMESTAMP DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS request_logs (
+  id SERIAL PRIMARY KEY,
+  file_id INT NOT NULL,
+  edge_id INT NOT NULL,
+  hit BOOLEAN NOT NULL,
+  latency_ms INT NOT NULL,
+  created_at TIMESTAMP DEFAULT now()
+);

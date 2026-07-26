@@ -22,10 +22,12 @@ function loadDbState() {
   try {
     if (fs.existsSync(DB_STATE_FILE)) {
       const data = fs.readFileSync(DB_STATE_FILE, 'utf8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (!parsed.request_logs) parsed.request_logs = [];
+      return parsed;
     }
   } catch (e) {}
-  return { files: [], edges: [], autoId: 1 };
+  return { files: [], edges: [], request_logs: [], autoId: 1 };
 }
 
 function saveDbState(state) {
@@ -62,9 +64,20 @@ async function initDb() {
         last_seen TIMESTAMP DEFAULT now()
       );
     `;
+    const createRequestLogsTable = `
+      CREATE TABLE IF NOT EXISTS request_logs (
+        id SERIAL PRIMARY KEY,
+        file_id INT NOT NULL,
+        edge_id INT NOT NULL,
+        hit BOOLEAN NOT NULL,
+        latency_ms INT NOT NULL,
+        created_at TIMESTAMP DEFAULT now()
+      );
+    `;
     await pool.query(createFilesTable);
     await pool.query(createEdgesTable);
-    logger.info('Connected to PostgreSQL successfully. Tables "files" and "edges" verified.');
+    await pool.query(createRequestLogsTable);
+    logger.info('Connected to PostgreSQL successfully. Tables "files", "edges", and "request_logs" verified.');
   } catch (err) {
     useFallback = true;
     logger.info({ reason: err.message }, 'PostgreSQL connection unavailable/failed. Falling back to embedded memory database.');
@@ -165,6 +178,26 @@ async function query(text, params = []) {
 
   if (sql.includes('SELECT * FROM edges')) {
     return { rows: [...dbState.edges], rowCount: dbState.edges.length };
+  }
+
+  // Request Logs Table Queries
+  if (sql.includes('INSERT INTO request_logs')) {
+    const [file_id, edge_id, hit, latency_ms] = params;
+    const newLog = {
+      id: dbState.autoId++,
+      file_id: parseInt(file_id, 10),
+      edge_id: parseInt(edge_id, 10),
+      hit: Boolean(hit),
+      latency_ms: parseInt(latency_ms, 10),
+      created_at: new Date()
+    };
+    dbState.request_logs.push(newLog);
+    saveDbState(dbState);
+    return { rows: [newLog], rowCount: 1 };
+  }
+
+  if (sql.includes('SELECT * FROM request_logs')) {
+    return { rows: [...dbState.request_logs], rowCount: dbState.request_logs.length };
   }
 
   return { rows: [], rowCount: 0 };

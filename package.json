@@ -6,7 +6,9 @@
   "scripts": {
     "start:origin": "node origin/index.js",
     "start:edge": "node edge/index.js",
-    "test:phase1": "node tests/smoke_test_phase1.js"
+    "start:lb": "node lb/index.js",
+    "test:phase1": "node tests/smoke_test_phase1.js",
+    "test:phase2": "node tests/smoke_test_phase2.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
