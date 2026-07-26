@@ -5,6 +5,9 @@ const path = require('path');
 const http = require('http');
 const logger = require('../../shared/logger');
 const redis = require('../../shared/redis');
+const lru = require('../cache/lru');
+
+const MAX_CACHE_FILES = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
 
 function getCacheDir() {
   const edgeId = process.env.EDGE_ID || 1;
@@ -86,16 +89,23 @@ router.get('/file/:id', async (req, res) => {
     originRes.pipe(fileWriteStream);
     originRes.pipe(res);
 
-    fileWriteStream.on('finish', () => {
-      fs.rename(tempCachePath, cachePath, (err) => {
-        if (err) {
-          logger.error({ err, fileId }, 'Failed to move temp cache file to cache path');
-        } else {
-          logger.info({ fileId, edgeId }, 'File cached successfully on Edge');
-          redis.addFileToEdge(fileId, edgeId).catch(e => logger.error({ e }, 'Redis error'));
-          redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
-        }
-      });
+    fileWriteStream.on('finish', async () => {
+      try {
+        const maxCap = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
+        await lru.evictIfFull(edgeId, cacheDir, maxCap);
+        
+        fs.rename(tempCachePath, cachePath, (err) => {
+          if (err) {
+            logger.error({ err, fileId }, 'Failed to move temp cache file to cache path');
+          } else {
+            logger.info({ fileId, edgeId }, 'File cached successfully on Edge');
+            redis.addFileToEdge(fileId, edgeId).catch(e => logger.error({ e }, 'Redis error'));
+            redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
+          }
+        });
+      } catch (evictErr) {
+        logger.error({ evictErr }, 'Error during LRU eviction check');
+      }
     });
 
     fileWriteStream.on('error', (err) => {
