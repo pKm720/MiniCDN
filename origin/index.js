@@ -2,6 +2,7 @@ const express = require('express');
 require('dotenv').config();
 const logger = require('../shared/logger');
 const db = require('../shared/db');
+const syncDownloads = require('../shared/sync_downloads');
 
 const uploadRoutes = require('./routes/upload');
 const serveRoutes = require('./routes/serve');
@@ -23,6 +24,7 @@ app.get('/health', (req, res) => {
 async function startServer() {
   try {
     await db.initDb();
+    syncDownloads.startDownloadSync(parseInt(process.env.DOWNLOAD_SYNC_INTERVAL_MS || '30000', 10));
     app.listen(PORT, () => {
       logger.info(`Origin Server running on port ${PORT}`);
     });

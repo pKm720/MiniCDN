@@ -275,6 +275,80 @@ async function removeCacheTtl(edgeId, fileId) {
   }
 }
 
+// -------------------------------------------------------------------
+// Key 5: file:{id}:downloads -> INT counter for file downloads
+// -------------------------------------------------------------------
+async function incrementDownloadCount(fileId) {
+  const key = `file:${fileId}:downloads`;
+  const fId = String(fileId);
+
+  if (!useFallback) {
+    try {
+      const newCount = await redisClient.incr(key);
+      return newCount;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  if (!state.kv[key]) state.kv[key] = "0";
+  const newCount = parseInt(state.kv[key], 10) + 1;
+  state.kv[key] = String(newCount);
+  saveState(state);
+  return newCount;
+}
+
+async function getDownloadCount(fileId) {
+  const key = `file:${fileId}:downloads`;
+
+  if (!useFallback) {
+    try {
+      const val = await redisClient.get(key);
+      return val ? parseInt(val, 10) : 0;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  return state.kv[key] ? parseInt(state.kv[key], 10) : 0;
+}
+
+async function getAllDownloadCounts() {
+  const result = {};
+
+  if (!useFallback) {
+    try {
+      const keys = await redisClient.keys('file:*:downloads');
+      for (const key of keys) {
+        const parts = key.split(':');
+        const fileId = parts[1];
+        const val = await redisClient.get(key);
+        if (fileId && val) {
+          result[fileId] = parseInt(val, 10);
+        }
+      }
+      return result;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  for (const key of Object.keys(state.kv)) {
+    if (key.startsWith('file:') && key.endsWith(':downloads')) {
+      const parts = key.split(':');
+      const fileId = parts[1];
+      const val = state.kv[key];
+      if (fileId && val) {
+        result[fileId] = parseInt(val, 10);
+      }
+    }
+  }
+  return result;
+}
+
 module.exports = {
   redisClient,
   initRedis,
@@ -288,5 +362,8 @@ module.exports = {
   getHeartbeat,
   setCacheTtl,
   getCacheTtl,
-  removeCacheTtl
+  removeCacheTtl,
+  incrementDownloadCount,
+  getDownloadCount,
+  getAllDownloadCounts
 };

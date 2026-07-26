@@ -42,9 +42,10 @@ router.get('/file/:id', async (req, res) => {
       res.setHeader('X-Cache-Status', 'HIT');
       res.setHeader('X-Response-Time-Ms', duration);
 
-      // Update Redis lookup & LRU recency
+      // Update Redis lookup, LRU recency, and download counter
       redis.addFileToEdge(fileId, edgeId).catch(err => logger.error({ err }, 'Redis error'));
       redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(err => logger.error({ err }, 'Redis error'));
+      redis.incrementDownloadCount(fileId).catch(err => logger.error({ err }, 'Redis error'));
 
       const stream = fs.createReadStream(cachePath);
       stream.on('error', (err) => {
@@ -89,6 +90,9 @@ router.get('/file/:id', async (req, res) => {
     if (originRes.headers['content-length']) {
       res.setHeader('Content-Length', originRes.headers['content-length']);
     }
+
+    // Increment download counter for file (MISS counts as user demand)
+    redis.incrementDownloadCount(fileId).catch(err => logger.error({ err }, 'Redis error'));
 
     // Stream to temporary file to avoid incomplete cache entries on crash/error
     const tempCachePath = path.join(cacheDir, `${fileId}.tmp`);

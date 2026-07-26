@@ -42,8 +42,35 @@ pool.on('error', (err) => {
   }
 });
 
+async function ensureDatabaseExists() {
+  const targetDb = process.env.PGDATABASE || 'minicdn';
+  const tempPool = new Pool({
+    user: process.env.PGUSER || 'postgres',
+    host: process.env.PGHOST || 'localhost',
+    database: 'postgres',
+    password: process.env.PGPASSWORD || 'postgres',
+    port: parseInt(process.env.PGPORT || '5432', 10),
+    connectionTimeoutMillis: 3000
+  });
+
+  try {
+    const res = await tempPool.query("SELECT 1 FROM pg_database WHERE datname = $1", [targetDb]);
+    if (res.rows.length === 0) {
+      logger.info(`Database "${targetDb}" does not exist on PostgreSQL server. Auto-creating database...`);
+      await tempPool.query(`CREATE DATABASE "${targetDb}"`);
+      logger.info(`Database "${targetDb}" created successfully.`);
+    }
+  } catch (err) {
+    // If temp connect fails, log and fall through
+  } finally {
+    await tempPool.end().catch(() => {});
+  }
+}
+
 async function initDb() {
   try {
+    await ensureDatabaseExists();
+
     const createFilesTable = `
       CREATE TABLE IF NOT EXISTS files (
         id SERIAL PRIMARY KEY,
