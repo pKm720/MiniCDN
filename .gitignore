@@ -9,11 +9,17 @@ node_modules/
 .env.production.local
 !.env.example
 
+# Test suite (ignored per user request)
+tests/
+
 # Runtime Payload Storage & Disk Cache
 origin/storage/*
 !origin/storage/.gitkeep
 edge/cache/*
 !edge/cache/.gitkeep
+
+# IPC fallback state
+shared/.redis_state.json
 
 # Logs
 logs/

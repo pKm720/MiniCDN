@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const logger = require('../../shared/logger');
+const redis = require('../../shared/redis');
 
 function getCacheDir() {
   const edgeId = process.env.EDGE_ID || 1;
@@ -17,18 +18,23 @@ function getCacheDir() {
 const ORIGIN_HOST = process.env.ORIGIN_HOST || 'localhost';
 const ORIGIN_PORT = process.env.PORT_ORIGIN || 4000;
 
-router.get('/file/:id', (req, res) => {
+router.get('/file/:id', async (req, res) => {
   const startTime = Date.now();
   const fileId = req.params.id;
+  const edgeId = process.env.EDGE_ID || 1;
   const cacheDir = getCacheDir();
   const cachePath = path.join(cacheDir, String(fileId));
 
   // Step 1: Check Local Cache Hit
   if (fs.existsSync(cachePath)) {
-    logger.info({ fileId }, 'Edge Cache HIT');
+    logger.info({ fileId, edgeId }, 'Edge Cache HIT');
     const duration = Date.now() - startTime;
     res.setHeader('X-Cache-Status', 'HIT');
     res.setHeader('X-Response-Time-Ms', duration);
+
+    // Update Redis lookup & LRU recency
+    redis.addFileToEdge(fileId, edgeId).catch(err => logger.error({ err }, 'Redis error'));
+    redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(err => logger.error({ err }, 'Redis error'));
 
     const stream = fs.createReadStream(cachePath);
     stream.on('error', (err) => {
@@ -85,7 +91,9 @@ router.get('/file/:id', (req, res) => {
         if (err) {
           logger.error({ err, fileId }, 'Failed to move temp cache file to cache path');
         } else {
-          logger.info({ fileId }, 'File cached successfully on Edge');
+          logger.info({ fileId, edgeId }, 'File cached successfully on Edge');
+          redis.addFileToEdge(fileId, edgeId).catch(e => logger.error({ e }, 'Redis error'));
+          redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
         }
       });
     });
