@@ -214,6 +214,67 @@ async function getHeartbeat(edgeId) {
   return state.kv[key] || null;
 }
 
+// -------------------------------------------------------------------
+// Key 4: edge:{id}:ttl -> HASH mapping fileId -> cachedAt timestamp
+// -------------------------------------------------------------------
+async function setCacheTtl(edgeId, fileId, timestamp = Date.now()) {
+  const key = `edge:${edgeId}:ttl`;
+  const fId = String(fileId);
+  const ts = String(timestamp);
+
+  if (!useFallback) {
+    try {
+      await redisClient.hset(key, fId, ts);
+      return;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  if (!state.hashes[key]) state.hashes[key] = {};
+  state.hashes[key][fId] = ts;
+  saveState(state);
+}
+
+async function getCacheTtl(edgeId, fileId) {
+  const key = `edge:${edgeId}:ttl`;
+  const fId = String(fileId);
+
+  if (!useFallback) {
+    try {
+      const val = await redisClient.hget(key, fId);
+      return val ? parseInt(val, 10) : null;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  const val = state.hashes[key] ? state.hashes[key][fId] : null;
+  return val ? parseInt(val, 10) : null;
+}
+
+async function removeCacheTtl(edgeId, fileId) {
+  const key = `edge:${edgeId}:ttl`;
+  const fId = String(fileId);
+
+  if (!useFallback) {
+    try {
+      await redisClient.hdel(key, fId);
+      return;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  if (state.hashes[key]) {
+    delete state.hashes[key][fId];
+    saveState(state);
+  }
+}
+
 module.exports = {
   redisClient,
   initRedis,
@@ -224,5 +285,8 @@ module.exports = {
   removeEdgeRecency,
   getEdgeCacheRecency,
   setHeartbeat,
-  getHeartbeat
+  getHeartbeat,
+  setCacheTtl,
+  getCacheTtl,
+  removeCacheTtl
 };

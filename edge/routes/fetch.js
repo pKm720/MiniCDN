@@ -28,25 +28,33 @@ router.get('/file/:id', async (req, res) => {
   const cacheDir = getCacheDir();
   const cachePath = path.join(cacheDir, String(fileId));
 
-  // Step 1: Check Local Cache Hit
+  // Step 1: Check Local Cache Hit & TTL Expiration
   if (fs.existsSync(cachePath)) {
-    logger.info({ fileId, edgeId }, 'Edge Cache HIT');
-    const duration = Date.now() - startTime;
-    res.setHeader('X-Cache-Status', 'HIT');
-    res.setHeader('X-Response-Time-Ms', duration);
+    const cachedAt = await redis.getCacheTtl(edgeId, fileId);
+    const ttlMs = parseInt(process.env.CACHE_TTL_MS || '1800000', 10);
+    const isExpired = cachedAt && (Date.now() - cachedAt > ttlMs);
 
-    // Update Redis lookup & LRU recency
-    redis.addFileToEdge(fileId, edgeId).catch(err => logger.error({ err }, 'Redis error'));
-    redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(err => logger.error({ err }, 'Redis error'));
+    if (isExpired) {
+      logger.info({ fileId, edgeId, cachedAt, ttlMs }, 'Edge Cache TTL EXPIRED — refetching from Origin');
+    } else {
+      logger.info({ fileId, edgeId }, 'Edge Cache HIT');
+      const duration = Date.now() - startTime;
+      res.setHeader('X-Cache-Status', 'HIT');
+      res.setHeader('X-Response-Time-Ms', duration);
 
-    const stream = fs.createReadStream(cachePath);
-    stream.on('error', (err) => {
-      logger.error({ err, fileId }, 'Error streaming file from edge cache');
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Cache read error' });
-      }
-    });
-    return stream.pipe(res);
+      // Update Redis lookup & LRU recency
+      redis.addFileToEdge(fileId, edgeId).catch(err => logger.error({ err }, 'Redis error'));
+      redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(err => logger.error({ err }, 'Redis error'));
+
+      const stream = fs.createReadStream(cachePath);
+      stream.on('error', (err) => {
+        logger.error({ err, fileId }, 'Error streaming file from edge cache');
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Cache read error' });
+        }
+      });
+      return stream.pipe(res);
+    }
   }
 
   // Step 2: Cache Miss — Call Origin Server
@@ -101,6 +109,7 @@ router.get('/file/:id', async (req, res) => {
             logger.info({ fileId, edgeId }, 'File cached successfully on Edge');
             redis.addFileToEdge(fileId, edgeId).catch(e => logger.error({ e }, 'Redis error'));
             redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
+            redis.setCacheTtl(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
           }
         });
       } catch (evictErr) {
