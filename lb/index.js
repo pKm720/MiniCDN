@@ -1,0 +1,36 @@
+const express = require('express');
+require('dotenv').config();
+const logger = require('../shared/logger');
+const db = require('../shared/db');
+const heartbeatRoutes = require('./routes/heartbeat');
+const healthMonitor = require('./health_monitor');
+
+const app = express();
+const PORT = process.env.PORT_LB || 3000;
+
+app.use(express.json());
+
+app.use('/lb', heartbeatRoutes);
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'load-balancer', port: PORT });
+});
+
+async function startServer() {
+  try {
+    await db.initDb();
+    healthMonitor.startHealthMonitor(parseInt(process.env.HEALTH_CHECK_INTERVAL_MS || '10000', 10));
+    app.listen(PORT, () => {
+      logger.info(`Load Balancer running on port ${PORT}`);
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to start Load Balancer');
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = app;

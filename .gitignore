@@ -18,8 +18,9 @@ origin/storage/*
 edge/cache/*
 !edge/cache/.gitkeep
 
-# IPC fallback state
+# IPC fallback states
 shared/.redis_state.json
+shared/.db_state.json
 
 # Logs
 logs/

@@ -8,3 +8,10 @@ CREATE TABLE IF NOT EXISTS files (
   created_at TIMESTAMP DEFAULT now(),
   updated_at TIMESTAMP DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS edges (
+  id INT PRIMARY KEY,
+  edge_name TEXT NOT NULL,
+  status TEXT DEFAULT 'healthy',
+  last_seen TIMESTAMP DEFAULT now()
+);

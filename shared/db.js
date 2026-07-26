@@ -11,13 +11,28 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000
 });
 
+const fs = require('fs');
+const path = require('path');
+
+const DB_STATE_FILE = path.join(__dirname, '.db_state.json');
+
 let useFallback = false;
 
-// Embedded memory table for graceful fallback when Postgres container is offline
-const memoryDb = {
-  files: [],
-  autoId: 1
-};
+function loadDbState() {
+  try {
+    if (fs.existsSync(DB_STATE_FILE)) {
+      const data = fs.readFileSync(DB_STATE_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {}
+  return { files: [], edges: [], autoId: 1 };
+}
+
+function saveDbState(state) {
+  try {
+    fs.writeFileSync(DB_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (e) {}
+}
 
 pool.on('error', (err) => {
   if (!useFallback) {
@@ -27,7 +42,7 @@ pool.on('error', (err) => {
 
 async function initDb() {
   try {
-    const createTableQuery = `
+    const createFilesTable = `
       CREATE TABLE IF NOT EXISTS files (
         id SERIAL PRIMARY KEY,
         filename TEXT NOT NULL,
@@ -39,8 +54,17 @@ async function initDb() {
         updated_at TIMESTAMP DEFAULT now()
       );
     `;
-    await pool.query(createTableQuery);
-    logger.info('Connected to PostgreSQL successfully. Table "files" verified.');
+    const createEdgesTable = `
+      CREATE TABLE IF NOT EXISTS edges (
+        id INT PRIMARY KEY,
+        edge_name TEXT NOT NULL,
+        status TEXT DEFAULT 'healthy',
+        last_seen TIMESTAMP DEFAULT now()
+      );
+    `;
+    await pool.query(createFilesTable);
+    await pool.query(createEdgesTable);
+    logger.info('Connected to PostgreSQL successfully. Tables "files" and "edges" verified.');
   } catch (err) {
     useFallback = true;
     logger.info({ reason: err.message }, 'PostgreSQL connection unavailable/failed. Falling back to embedded memory database.');
@@ -61,8 +85,9 @@ async function query(text, params = []) {
     }
   }
 
-  // Memory Fallback Implementation
+  // Memory Fallback Implementation (Multi-Process IPC synced)
   const sql = text.trim();
+  const dbState = loadDbState();
 
   if (sql.startsWith('CREATE TABLE')) {
     return { rows: [], rowCount: 0 };
@@ -71,7 +96,7 @@ async function query(text, params = []) {
   if (sql.includes('INSERT INTO files')) {
     const [filename, hash, size, mime] = params;
     const newRecord = {
-      id: memoryDb.autoId++,
+      id: dbState.autoId++,
       filename,
       hash,
       size,
@@ -80,24 +105,66 @@ async function query(text, params = []) {
       created_at: new Date(),
       updated_at: new Date()
     };
-    memoryDb.files.push(newRecord);
+    dbState.files.push(newRecord);
+    saveDbState(dbState);
     return { rows: [newRecord], rowCount: 1 };
   }
 
   if (sql.includes('SELECT * FROM files WHERE id = $1')) {
     const fileId = parseInt(params[0], 10);
-    const record = memoryDb.files.find(f => f.id === fileId);
+    const record = dbState.files.find(f => f.id === fileId);
     return { rows: record ? [record] : [], rowCount: record ? 1 : 0 };
   }
 
   if (sql.includes('DELETE FROM files WHERE id = $1')) {
     const fileId = parseInt(params[0], 10);
-    const index = memoryDb.files.findIndex(f => f.id === fileId);
+    const index = dbState.files.findIndex(f => f.id === fileId);
     if (index !== -1) {
-      const removed = memoryDb.files.splice(index, 1)[0];
+      const removed = dbState.files.splice(index, 1)[0];
+      saveDbState(dbState);
       return { rows: [removed], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
+  }
+
+  // Edges Table Queries
+  if (sql.includes('INSERT INTO edges') || sql.includes('ON CONFLICT (id)')) {
+    const edgeId = parseInt(params[0], 10);
+    const edgeName = params[1] || `edge-${edgeId}`;
+    const status = params[2] || 'healthy';
+
+    let record = dbState.edges.find(e => e.id === edgeId);
+    if (record) {
+      record.status = status;
+      record.last_seen = new Date();
+    } else {
+      record = { id: edgeId, edge_name: edgeName, status, last_seen: new Date() };
+      dbState.edges.push(record);
+    }
+    saveDbState(dbState);
+    return { rows: [record], rowCount: 1 };
+  }
+
+  if (sql.includes('UPDATE edges SET status =')) {
+    const status = params[0];
+    const edgeId = parseInt(params[1], 10);
+    const record = dbState.edges.find(e => e.id === edgeId);
+    if (record) {
+      record.status = status;
+      saveDbState(dbState);
+      return { rows: [record], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes('SELECT * FROM edges WHERE id = $1')) {
+    const edgeId = parseInt(params[0], 10);
+    const record = dbState.edges.find(e => e.id === edgeId);
+    return { rows: record ? [record] : [], rowCount: record ? 1 : 0 };
+  }
+
+  if (sql.includes('SELECT * FROM edges')) {
+    return { rows: [...dbState.edges], rowCount: dbState.edges.length };
   }
 
   return { rows: [], rowCount: 0 };
