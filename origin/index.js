@@ -7,6 +7,7 @@ const syncDownloads = require('../shared/sync_downloads');
 const uploadRoutes = require('./routes/upload');
 const serveRoutes = require('./routes/serve');
 const deleteRoutes = require('./routes/delete');
+const topFilesRoutes = require('./routes/top_files');
 
 const app = express();
 const PORT = process.env.PORT_ORIGIN || 4000;
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use('/origin', uploadRoutes);
 app.use('/origin', serveRoutes);
 app.use('/origin', deleteRoutes);
+app.use('/origin', topFilesRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'origin' });
