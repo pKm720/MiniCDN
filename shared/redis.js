@@ -386,6 +386,72 @@ async function getReplicatedFlag(fileId) {
   return state.kv[key] ? parseInt(state.kv[key], 10) : null;
 }
 
+// -------------------------------------------------------------------
+// Key 7: edge:{id}:hits and edge:{id}:misses counters
+// -------------------------------------------------------------------
+async function incrementEdgeHit(edgeId) {
+  const key = `edge:${edgeId}:hits`;
+
+  if (!useFallback) {
+    try {
+      const val = await redisClient.incr(key);
+      return val;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  if (!state.kv[key]) state.kv[key] = "0";
+  const val = parseInt(state.kv[key], 10) + 1;
+  state.kv[key] = String(val);
+  saveState(state);
+  return val;
+}
+
+async function incrementEdgeMiss(edgeId) {
+  const key = `edge:${edgeId}:misses`;
+
+  if (!useFallback) {
+    try {
+      const val = await redisClient.incr(key);
+      return val;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  if (!state.kv[key]) state.kv[key] = "0";
+  const val = parseInt(state.kv[key], 10) + 1;
+  state.kv[key] = String(val);
+  saveState(state);
+  return val;
+}
+
+async function getEdgeHitMissStats(edgeId) {
+  const hitKey = `edge:${edgeId}:hits`;
+  const missKey = `edge:${edgeId}:misses`;
+
+  if (!useFallback) {
+    try {
+      const hitsVal = await redisClient.get(hitKey);
+      const missesVal = await redisClient.get(missKey);
+      return {
+        hits: hitsVal ? parseInt(hitsVal, 10) : 0,
+        misses: missesVal ? parseInt(missesVal, 10) : 0
+      };
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  const hitsVal = state.kv[hitKey] ? parseInt(state.kv[hitKey], 10) : 0;
+  const missesVal = state.kv[missKey] ? parseInt(state.kv[missKey], 10) : 0;
+  return { hits: hitsVal, misses: missesVal };
+}
+
 module.exports = {
   redisClient,
   initRedis,
@@ -404,5 +470,8 @@ module.exports = {
   getDownloadCount,
   getAllDownloadCounts,
   setReplicatedFlag,
-  getReplicatedFlag
+  getReplicatedFlag,
+  incrementEdgeHit,
+  incrementEdgeMiss,
+  getEdgeHitMissStats
 };

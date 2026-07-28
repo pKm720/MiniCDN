@@ -4,6 +4,7 @@ require('dotenv').config();
 const logger = require('../shared/logger');
 const fetchRoutes = require('./routes/fetch');
 const receiveRoutes = require('./routes/receive');
+const statsRoutes = require('./routes/stats');
 
 const app = express();
 const EDGE_ID = parseInt(process.env.EDGE_ID || '1', 10);
@@ -16,6 +17,7 @@ app.use(express.json());
 
 app.use('/edge', fetchRoutes);
 app.use('/edge', receiveRoutes);
+app.use('/edge', statsRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'edge', edgeId: EDGE_ID, port: PORT });

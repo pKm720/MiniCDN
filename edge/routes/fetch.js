@@ -43,9 +43,10 @@ router.get('/file/:id', async (req, res) => {
       res.setHeader('X-Cache-Status', 'HIT');
       res.setHeader('X-Response-Time-Ms', duration);
 
-      // Update Redis lookup, LRU recency, and download counter
+      // Update Redis lookup, LRU recency, hit counter, and download counter
       redis.addFileToEdge(fileId, edgeId).catch(err => logger.error({ err }, 'Redis error'));
       redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(err => logger.error({ err }, 'Redis error'));
+      redis.incrementEdgeHit(edgeId).catch(err => logger.error({ err }, 'Redis error'));
       redis.incrementDownloadCount(fileId).then(count => {
         replication.triggerReplication(fileId).catch(err => logger.error({ err, fileId }, 'Replication trigger error'));
       }).catch(err => logger.error({ err }, 'Redis error'));
@@ -94,7 +95,8 @@ router.get('/file/:id', async (req, res) => {
       res.setHeader('Content-Length', originRes.headers['content-length']);
     }
 
-    // Increment download counter for file (MISS counts as user demand)
+    // Increment download counter & miss counter (MISS counts as user demand)
+    redis.incrementEdgeMiss(edgeId).catch(err => logger.error({ err }, 'Redis error'));
     redis.incrementDownloadCount(fileId).then(count => {
       replication.triggerReplication(fileId).catch(err => logger.error({ err, fileId }, 'Replication trigger error'));
     }).catch(err => logger.error({ err }, 'Redis error'));
