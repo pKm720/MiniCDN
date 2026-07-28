@@ -21,9 +21,29 @@ function loadState() {
   return { sets: {}, hashes: {}, kv: {} };
 }
 
-function saveState(state) {
+function saveState(newState) {
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+    let currentState = { sets: {}, hashes: {}, kv: {} };
+    if (fs.existsSync(STATE_FILE)) {
+      try {
+        const data = fs.readFileSync(STATE_FILE, 'utf8');
+        currentState = JSON.parse(data);
+      } catch (e) {}
+    }
+
+    if (!currentState.sets) currentState.sets = {};
+    if (!currentState.hashes) currentState.hashes = {};
+    if (!currentState.kv) currentState.kv = {};
+
+    const mergedSets = { ...currentState.sets, ...newState.sets };
+    const mergedHashes = { ...currentState.hashes };
+    for (const hKey of Object.keys(newState.hashes || {})) {
+      mergedHashes[hKey] = { ...(currentState.hashes[hKey] || {}), ...newState.hashes[hKey] };
+    }
+    const mergedKv = { ...currentState.kv, ...newState.kv };
+
+    const merged = { sets: mergedSets, hashes: mergedHashes, kv: mergedKv };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(merged, null, 2), 'utf8');
   } catch (e) {}
 }
 

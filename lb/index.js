@@ -4,6 +4,7 @@ const logger = require('../shared/logger');
 const db = require('../shared/db');
 const heartbeatRoutes = require('./routes/heartbeat');
 const lbRouter = require('./routes/router');
+const statsRoutes = require('./routes/stats');
 const healthMonitor = require('./health_monitor');
 
 const app = express();
@@ -12,6 +13,7 @@ const PORT = process.env.PORT_LB || 3000;
 app.use(express.json());
 
 app.use('/lb', heartbeatRoutes);
+app.use('/lb', statsRoutes);
 app.use('/lb', lbRouter);
 
 app.get('/health', (req, res) => {
