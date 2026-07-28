@@ -1,11 +1,38 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const db = require('../../shared/db');
 const redis = require('../../shared/redis');
 const logger = require('../../shared/logger');
+const cluster = require('../../shared/cluster');
 
 const router = express.Router();
+
+function fetchEdgeStatsHttp(edgeId) {
+  return new Promise((resolve) => {
+    const target = cluster.getEdgeTarget(edgeId);
+    const req = http.get(`http://${target.hostname}:${target.port}/edge/stats`, { timeout: 1500 }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve({ success: true, stats: JSON.parse(data) });
+            return;
+          } catch (e) {}
+        }
+        resolve({ success: false });
+      });
+    });
+
+    req.on('error', () => resolve({ success: false }));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ success: false });
+    });
+  });
+}
 
 function getDiskStatsForEdge(edgeId) {
   const cacheDir = path.join(__dirname, `../../edge/cache/edge_${edgeId}`);
@@ -61,13 +88,34 @@ router.get('/stats', async (req, res) => {
 
     for (const edge of edgeRecords) {
       const edgeId = edge.id;
-      const status = edge.status || 'healthy';
+      let status = edge.status || 'healthy';
+
+      const httpRes = await fetchEdgeStatsHttp(edgeId);
+      let hits = 0;
+      let misses = 0;
+      let cacheSizeFiles = 0;
+      let cacheSizeBytes = 0;
+      let cachedFileIds = [];
+
+      if (httpRes.success) {
+        hits = httpRes.stats.hits || 0;
+        misses = httpRes.stats.misses || 0;
+        cacheSizeFiles = httpRes.stats.cacheSizeFiles || 0;
+        cacheSizeBytes = httpRes.stats.cacheSizeBytes || 0;
+        cachedFileIds = httpRes.stats.cachedFileIds || [];
+      } else {
+        status = 'offline';
+        const redisStats = await redis.getEdgeHitMissStats(edgeId);
+        hits = redisStats.hits;
+        misses = redisStats.misses;
+        const diskStats = getDiskStatsForEdge(edgeId);
+        cacheSizeFiles = diskStats.cacheSizeFiles;
+        cacheSizeBytes = diskStats.cacheSizeBytes;
+        cachedFileIds = diskStats.cachedFileIds;
+      }
+
       if (status === 'healthy') healthyEdgesCount++;
-
-      const { hits, misses } = await redis.getEdgeHitMissStats(edgeId);
-      const diskStats = getDiskStatsForEdge(edgeId);
       const edgeRequests = hits + misses;
-
       totalHits += hits;
       totalMisses += misses;
 
@@ -78,9 +126,9 @@ router.get('/stats', async (req, res) => {
         hits,
         misses,
         totalRequests: edgeRequests,
-        cacheSizeFiles: diskStats.cacheSizeFiles,
-        cacheSizeBytes: diskStats.cacheSizeBytes,
-        cachedFileIds: diskStats.cachedFileIds
+        cacheSizeFiles,
+        cacheSizeBytes,
+        cachedFileIds
       });
     }
 

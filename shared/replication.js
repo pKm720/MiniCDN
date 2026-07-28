@@ -4,6 +4,7 @@ const http = require('http');
 const db = require('./db');
 const redis = require('./redis');
 const logger = require('./logger');
+const cluster = require('./cluster');
 
 const ORIGIN_STORAGE_DIR = path.join(__dirname, '../origin/storage');
 
@@ -55,8 +56,8 @@ async function triggerReplication(fileId, targetEdges = [1, 2, 3]) {
   const failedEdges = [];
 
   for (const edgeId of missingEdges) {
-    const edgePort = 3000 + edgeId;
-    const pushed = await pushFileToEdge(edgeId, edgePort, fId, localStoragePath);
+    const target = cluster.getEdgeTarget(edgeId);
+    const pushed = await pushFileToEdge(edgeId, target.hostname, target.port, fId, localStoragePath);
     if (pushed) {
       pushedTo.push(edgeId);
       await redis.addFileToEdge(fId, edgeId);
@@ -72,13 +73,13 @@ async function triggerReplication(fileId, targetEdges = [1, 2, 3]) {
   return { replicated: true, pushedTo, failedEdges };
 }
 
-function pushFileToEdge(edgeId, edgePort, fileId, filePath) {
+function pushFileToEdge(edgeId, edgeHost, edgePort, fileId, filePath) {
   return new Promise((resolve) => {
     const fileStream = fs.createReadStream(filePath);
     const stats = fs.statSync(filePath);
 
     const req = http.request({
-      hostname: 'localhost',
+      hostname: edgeHost,
       port: edgePort,
       path: '/edge/receive',
       method: 'POST',
@@ -89,16 +90,16 @@ function pushFileToEdge(edgeId, edgePort, fileId, filePath) {
       }
     }, (res) => {
       if (res.statusCode === 200) {
-        logger.info({ fileId, edgeId, edgePort }, 'File proactively replicated to edge node');
+        logger.info({ fileId, edgeId, edgeHost, edgePort }, 'File proactively replicated to edge node');
         resolve(true);
       } else {
-        logger.error({ fileId, edgeId, statusCode: res.statusCode }, 'Edge rejected proactive replication push');
+        logger.error({ fileId, edgeId, edgeHost, statusCode: res.statusCode }, 'Edge rejected proactive replication push');
         resolve(false);
       }
     });
 
     req.on('error', (err) => {
-      logger.error({ fileId, edgeId, err: err.message }, 'Failed to push file to edge node (edge offline/unreachable)');
+      logger.error({ fileId, edgeId, edgeHost, err: err.message }, 'Failed to push file to edge node (edge offline/unreachable)');
       resolve(false);
     });
 

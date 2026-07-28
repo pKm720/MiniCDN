@@ -9,6 +9,7 @@ const lru = require('../cache/lru');
 const replication = require('../../shared/replication');
 
 const MAX_CACHE_FILES = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
+const inFlightFetches = new Map(); // String(fileId) -> Promise
 
 function getCacheDir() {
   const edgeId = process.env.EDGE_ID || 1;
@@ -28,6 +29,22 @@ router.get('/file/:id', async (req, res) => {
   const edgeId = process.env.EDGE_ID || 1;
   const cacheDir = getCacheDir();
   const cachePath = path.join(cacheDir, String(fileId));
+
+  // Check if file is currently being fetched from origin by a concurrent request
+  if (!fs.existsSync(cachePath) && inFlightFetches.has(String(fileId))) {
+    logger.info({ fileId, edgeId }, 'Concurrent request for uncached file — awaiting in-flight Origin fetch');
+    try {
+      await inFlightFetches.get(String(fileId));
+    } catch (e) {}
+
+    if (fs.existsSync(cachePath)) {
+      const duration = Date.now() - startTime;
+      res.setHeader('X-Cache-Status', 'HIT');
+      res.setHeader('X-Response-Time-Ms', duration);
+      redis.incrementEdgeHit(edgeId).catch(() => {});
+      return fs.createReadStream(cachePath).pipe(res);
+    }
+  }
 
   // Step 1: Check Local Cache Hit & TTL Expiration
   if (fs.existsSync(cachePath)) {
@@ -60,6 +77,16 @@ router.get('/file/:id', async (req, res) => {
       });
       return stream.pipe(res);
     }
+  }
+
+  // Register in-flight fetch promise for concurrent request deduplication
+  let resolveInFlight, rejectInFlight;
+  if (!inFlightFetches.has(String(fileId))) {
+    const fetchPromise = new Promise((res, rej) => {
+      resolveInFlight = res;
+      rejectInFlight = rej;
+    });
+    inFlightFetches.set(String(fileId), fetchPromise);
   }
 
   // Step 2: Cache Miss — Call Origin Server
@@ -114,6 +141,9 @@ router.get('/file/:id', async (req, res) => {
         await lru.evictIfFull(edgeId, cacheDir, maxCap);
         
         fs.rename(tempCachePath, cachePath, (err) => {
+          inFlightFetches.delete(String(fileId));
+          if (resolveInFlight) resolveInFlight();
+
           if (err) {
             logger.error({ err, fileId }, 'Failed to move temp cache file to cache path');
           } else {
@@ -124,11 +154,16 @@ router.get('/file/:id', async (req, res) => {
           }
         });
       } catch (evictErr) {
+        inFlightFetches.delete(String(fileId));
+        if (resolveInFlight) resolveInFlight();
         logger.error({ evictErr }, 'Error during LRU eviction check');
       }
     });
 
     fileWriteStream.on('error', (err) => {
+      inFlightFetches.delete(String(fileId));
+      if (rejectInFlight) rejectInFlight();
+
       logger.error({ err, fileId }, 'Error writing to temp cache file on Edge');
       if (fs.existsSync(tempCachePath)) {
         fs.unlink(tempCachePath, () => { });
@@ -137,6 +172,8 @@ router.get('/file/:id', async (req, res) => {
   });
 
   originReq.on('error', (err) => {
+    inFlightFetches.delete(String(fileId));
+    if (rejectInFlight) rejectInFlight();
     logger.error({ err: err.message, fileId }, 'Origin server unreachable from Edge');
     const duration = Date.now() - startTime;
     if (!res.headersSent) {

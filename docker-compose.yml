@@ -25,12 +25,15 @@ services:
     container_name: minicdn-origin
     command: npm run start:origin
     environment:
+      IS_DOCKER: "true"
       PORT_ORIGIN: 4000
       PGHOST: postgres
+      REDIS_HOST: redis
     ports:
       - "4000:4000"
     depends_on:
       - postgres
+      - redis
     volumes:
       - ./origin/storage:/app/origin/storage
 
@@ -39,16 +42,21 @@ services:
     container_name: minicdn-edge-1
     command: npm run start:edge
     environment:
+      IS_DOCKER: "true"
       EDGE_ID: 1
       PORT_EDGE: 3001
       ORIGIN_HOST: origin
       PORT_ORIGIN: 4000
+      LB_HOST: lb
+      PORT_LB: 3000
       REDIS_HOST: redis
+      PGHOST: postgres
     ports:
       - "3001:3001"
     depends_on:
       - origin
       - redis
+      - postgres
     volumes:
       - ./edge/cache/edge_1:/app/edge/cache/edge_1
 
@@ -57,16 +65,21 @@ services:
     container_name: minicdn-edge-2
     command: npm run start:edge
     environment:
+      IS_DOCKER: "true"
       EDGE_ID: 2
-      PORT_EDGE: 3002
+      PORT_EDGE: 3001
       ORIGIN_HOST: origin
       PORT_ORIGIN: 4000
+      LB_HOST: lb
+      PORT_LB: 3000
       REDIS_HOST: redis
+      PGHOST: postgres
     ports:
-      - "3002:3002"
+      - "3002:3001"
     depends_on:
       - origin
       - redis
+      - postgres
     volumes:
       - ./edge/cache/edge_2:/app/edge/cache/edge_2
 
@@ -75,18 +88,41 @@ services:
     container_name: minicdn-edge-3
     command: npm run start:edge
     environment:
+      IS_DOCKER: "true"
       EDGE_ID: 3
-      PORT_EDGE: 3003
+      PORT_EDGE: 3001
       ORIGIN_HOST: origin
       PORT_ORIGIN: 4000
+      LB_HOST: lb
+      PORT_LB: 3000
       REDIS_HOST: redis
+      PGHOST: postgres
     ports:
-      - "3003:3003"
+      - "3003:3001"
     depends_on:
       - origin
       - redis
+      - postgres
     volumes:
       - ./edge/cache/edge_3:/app/edge/cache/edge_3
+
+  lb:
+    build: .
+    container_name: minicdn-lb
+    command: npm run start:lb
+    environment:
+      IS_DOCKER: "true"
+      PORT_LB: 3000
+      PGHOST: postgres
+      REDIS_HOST: redis
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis
+      - edge1
+      - edge2
+      - edge3
 
 volumes:
   postgres_data:

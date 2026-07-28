@@ -9,7 +9,8 @@
     "start:lb": "node lb/index.js",
     "test:phase1": "node tests/smoke_test_phase1.js",
     "test:phase2": "node tests/smoke_test_phase2.js",
-    "test:phase3": "node tests/smoke_test_phase3.js"
+    "test:phase3": "node tests/smoke_test_phase3.js",
+    "test:all": "node tests/smoke_test_master.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

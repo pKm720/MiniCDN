@@ -30,9 +30,32 @@ function loadDbState() {
   return { files: [], edges: [], request_logs: [], autoId: 1 };
 }
 
-function saveDbState(state) {
+function saveDbState(newState) {
   try {
-    fs.writeFileSync(DB_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+    let currentState = { files: [], edges: [], request_logs: [], autoId: 1 };
+    if (fs.existsSync(DB_STATE_FILE)) {
+      try {
+        currentState = JSON.parse(fs.readFileSync(DB_STATE_FILE, 'utf8'));
+      } catch (e) {}
+    }
+    if (!currentState.files) currentState.files = [];
+    if (!currentState.edges) currentState.edges = [];
+    if (!currentState.request_logs) currentState.request_logs = [];
+
+    for (const f of newState.files || []) {
+      const idx = currentState.files.findIndex(cf => cf.id === f.id);
+      if (idx !== -1) currentState.files[idx] = f;
+      else currentState.files.push(f);
+    }
+
+    for (const e of newState.edges || []) {
+      const idx = currentState.edges.findIndex(ce => ce.id === e.id);
+      if (idx !== -1) currentState.edges[idx] = e;
+      else currentState.edges.push(e);
+    }
+
+    currentState.autoId = Math.max(currentState.autoId || 1, newState.autoId || 1);
+    fs.writeFileSync(DB_STATE_FILE, JSON.stringify(currentState, null, 2), 'utf8');
   } catch (e) {}
 }
 
@@ -150,10 +173,26 @@ async function query(text, params = []) {
     return { rows: [newRecord], rowCount: 1 };
   }
 
-  if (sql.includes('SELECT * FROM files WHERE id = $1')) {
-    const fileId = parseInt(params[0], 10);
+  if (sql.includes('UPDATE files SET download_count')) {
+    const downloadCount = parseInt(params[0], 10);
+    const fileId = parseInt(params[1], 10);
     const record = dbState.files.find(f => f.id === fileId);
-    return { rows: record ? [record] : [], rowCount: record ? 1 : 0 };
+    if (record) {
+      record.download_count = downloadCount;
+      record.updated_at = new Date();
+      saveDbState(dbState);
+      return { rows: [record], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }
+
+  if (sql.includes('FROM files')) {
+    if (sql.includes('WHERE id = $1')) {
+      const fileId = parseInt(params[0], 10);
+      const record = dbState.files.find(f => f.id === fileId);
+      return { rows: record ? [record] : [], rowCount: record ? 1 : 0 };
+    }
+    return { rows: [...dbState.files], rowCount: dbState.files.length };
   }
 
   if (sql.includes('DELETE FROM files WHERE id = $1')) {

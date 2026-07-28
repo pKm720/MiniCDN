@@ -3,21 +3,16 @@ const router = express.Router();
 const http = require('http');
 const db = require('../../shared/db');
 const logger = require('../../shared/logger');
+const cluster = require('../../shared/cluster');
 
 let roundRobinIndex = 0;
-
-function getEdgePort(edgeId) {
-  // If explicitly mapped via env or standard formula
-  return process.env[`PORT_EDGE_${edgeId}`] || (3000 + parseInt(edgeId, 10));
-}
 
 function forwardToEdge(edgeId, fileId, req, res) {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
-    const edgePort = getEdgePort(edgeId);
-    const edgeHost = process.env.EDGE_HOST || 'localhost';
+    const target = cluster.getEdgeTarget(edgeId);
 
-    const edgeUrl = `http://${edgeHost}:${edgePort}/edge/file/${fileId}`;
+    const edgeUrl = `http://${target.hostname}:${target.port}/edge/file/${fileId}`;
 
     const edgeReq = http.get(edgeUrl, (edgeRes) => {
       const latencyMs = Date.now() - startTime;
