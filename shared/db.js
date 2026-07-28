@@ -16,6 +16,14 @@ const path = require('path');
 
 const DB_STATE_FILE = path.join(__dirname, '.db_state.json');
 
+/**
+ * ARCHITECTURAL DESIGN NOTE / KNOWN LIMITATION:
+ * Once `useFallback = true` is tripped by a database connection failure, the process degrades
+ * to the file-backed IPC JSON state file (.db_state.json) for the duration of its lifecycle
+ * to ensure state consistency and prevent split-brain writes between PostgreSQL and file fallback.
+ * Production enhancement: Implement a background health ping timer that re-establishes PostgreSQL
+ * connection and backfills/promotes offline state deltas upon recovery.
+ */
 let useFallback = false;
 
 function loadDbState() {

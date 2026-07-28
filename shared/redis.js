@@ -8,6 +8,13 @@ const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 const STATE_FILE = path.join(__dirname, '.redis_state.json');
 
+/**
+ * ARCHITECTURAL DESIGN NOTE / KNOWN LIMITATION:
+ * Once `useFallback = true` is tripped by Redis unreachability, key operations degrade to the local
+ * IPC state file (.redis_state.json) for process lifetime stability to maintain write consistency.
+ * Production enhancement: Implement a lazy reconnection strategy with a probing background timer
+ * that flushes offline key deltas back to Redis upon recovery.
+ */
 let useFallback = false;
 
 // Multi-process IPC file fallback helper
