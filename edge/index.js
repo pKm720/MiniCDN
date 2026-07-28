@@ -3,6 +3,7 @@ const http = require('http');
 require('dotenv').config();
 const logger = require('../shared/logger');
 const fetchRoutes = require('./routes/fetch');
+const receiveRoutes = require('./routes/receive');
 
 const app = express();
 const EDGE_ID = parseInt(process.env.EDGE_ID || '1', 10);
@@ -14,6 +15,7 @@ const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '100
 app.use(express.json());
 
 app.use('/edge', fetchRoutes);
+app.use('/edge', receiveRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'edge', edgeId: EDGE_ID, port: PORT });

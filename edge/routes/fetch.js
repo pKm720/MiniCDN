@@ -6,6 +6,7 @@ const http = require('http');
 const logger = require('../../shared/logger');
 const redis = require('../../shared/redis');
 const lru = require('../cache/lru');
+const replication = require('../../shared/replication');
 
 const MAX_CACHE_FILES = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
 
@@ -45,7 +46,9 @@ router.get('/file/:id', async (req, res) => {
       // Update Redis lookup, LRU recency, and download counter
       redis.addFileToEdge(fileId, edgeId).catch(err => logger.error({ err }, 'Redis error'));
       redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(err => logger.error({ err }, 'Redis error'));
-      redis.incrementDownloadCount(fileId).catch(err => logger.error({ err }, 'Redis error'));
+      redis.incrementDownloadCount(fileId).then(count => {
+        replication.triggerReplication(fileId).catch(err => logger.error({ err, fileId }, 'Replication trigger error'));
+      }).catch(err => logger.error({ err }, 'Redis error'));
 
       const stream = fs.createReadStream(cachePath);
       stream.on('error', (err) => {
@@ -92,7 +95,9 @@ router.get('/file/:id', async (req, res) => {
     }
 
     // Increment download counter for file (MISS counts as user demand)
-    redis.incrementDownloadCount(fileId).catch(err => logger.error({ err }, 'Redis error'));
+    redis.incrementDownloadCount(fileId).then(count => {
+      replication.triggerReplication(fileId).catch(err => logger.error({ err, fileId }, 'Replication trigger error'));
+    }).catch(err => logger.error({ err }, 'Redis error'));
 
     // Stream to temporary file to avoid incomplete cache entries on crash/error
     const tempCachePath = path.join(cacheDir, `${fileId}.tmp`);

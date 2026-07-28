@@ -349,6 +349,43 @@ async function getAllDownloadCounts() {
   return result;
 }
 
+// -------------------------------------------------------------------
+// Key 6: file:{id}:replicated -> String timestamp of replication
+// -------------------------------------------------------------------
+async function setReplicatedFlag(fileId, timestamp = Date.now()) {
+  const key = `file:${fileId}:replicated`;
+  const val = String(timestamp);
+
+  if (!useFallback) {
+    try {
+      await redisClient.set(key, val);
+      return;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  state.kv[key] = val;
+  saveState(state);
+}
+
+async function getReplicatedFlag(fileId) {
+  const key = `file:${fileId}:replicated`;
+
+  if (!useFallback) {
+    try {
+      const val = await redisClient.get(key);
+      return val ? parseInt(val, 10) : null;
+    } catch (err) {
+      useFallback = true;
+    }
+  }
+
+  const state = loadState();
+  return state.kv[key] ? parseInt(state.kv[key], 10) : null;
+}
+
 module.exports = {
   redisClient,
   initRedis,
@@ -365,5 +402,7 @@ module.exports = {
   removeCacheTtl,
   incrementDownloadCount,
   getDownloadCount,
-  getAllDownloadCounts
+  getAllDownloadCounts,
+  setReplicatedFlag,
+  getReplicatedFlag
 };

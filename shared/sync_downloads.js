@@ -1,6 +1,7 @@
 const redis = require('./redis');
 const db = require('./db');
 const logger = require('./logger');
+const replication = require('./replication');
 
 let syncInterval = null;
 
@@ -21,6 +22,9 @@ async function syncDownloadCounts() {
           [downloadCount, numericId]
         );
         syncedCount++;
+
+        // Trigger replication check if download count meets threshold
+        replication.triggerReplication(fileId).catch(err => logger.error({ err, fileId }, 'Replication trigger error'));
       }
     }
 
