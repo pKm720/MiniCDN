@@ -1,0 +1,169 @@
+services:
+  # Load Balancer Web Service (Public Endpoint)
+  - type: web
+    name: minicdn-lb
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerCommand: npm run start:lb
+    plan: free
+    envVars:
+      - key: PORT_LB
+        value: "3000"
+      - key: JWT_SECRET
+        value: "supersecret-cdn-key"
+      - key: ORIGIN_HOST
+        fromService:
+          type: web
+          name: minicdn-origin
+          property: host
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: minicdn-redis
+          property: host
+      - key: PGHOST
+        fromDatabase:
+          name: minicdn-db
+          property: host
+      - key: PGUSER
+        fromDatabase:
+          name: minicdn-db
+          property: user
+      - key: PGPASSWORD
+        fromDatabase:
+          name: minicdn-db
+          property: password
+      - key: PGDATABASE
+        fromDatabase:
+          name: minicdn-db
+          property: database
+
+  # Origin Server
+  - type: web
+    name: minicdn-origin
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerCommand: npm run start:origin
+    plan: free
+    envVars:
+      - key: PORT_ORIGIN
+        value: "4000"
+      - key: JWT_SECRET
+        value: "supersecret-cdn-key"
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: minicdn-redis
+          property: host
+      - key: PGHOST
+        fromDatabase:
+          name: minicdn-db
+          property: host
+
+  # Edge Server 1
+  - type: web
+    name: minicdn-edge-1
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerCommand: npm run start:edge
+    plan: free
+    envVars:
+      - key: EDGE_ID
+        value: "1"
+      - key: PORT_EDGE
+        value: "3001"
+      - key: MAX_CACHE_FILES
+        value: "20"
+      - key: JWT_SECRET
+        value: "supersecret-cdn-key"
+      - key: ORIGIN_HOST
+        fromService:
+          type: web
+          name: minicdn-origin
+          property: host
+      - key: LB_HOST
+        fromService:
+          type: web
+          name: minicdn-lb
+          property: host
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: minicdn-redis
+          property: host
+
+  # Edge Server 2
+  - type: web
+    name: minicdn-edge-2
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerCommand: npm run start:edge
+    plan: free
+    envVars:
+      - key: EDGE_ID
+        value: "2"
+      - key: PORT_EDGE
+        value: "3001"
+      - key: MAX_CACHE_FILES
+        value: "20"
+      - key: JWT_SECRET
+        value: "supersecret-cdn-key"
+      - key: ORIGIN_HOST
+        fromService:
+          type: web
+          name: minicdn-origin
+          property: host
+      - key: LB_HOST
+        fromService:
+          type: web
+          name: minicdn-lb
+          property: host
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: minicdn-redis
+          property: host
+
+  # Edge Server 3
+  - type: web
+    name: minicdn-edge-3
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerCommand: npm run start:edge
+    plan: free
+    envVars:
+      - key: EDGE_ID
+        value: "3"
+      - key: PORT_EDGE
+        value: "3001"
+      - key: MAX_CACHE_FILES
+        value: "20"
+      - key: JWT_SECRET
+        value: "supersecret-cdn-key"
+      - key: ORIGIN_HOST
+        fromService:
+          type: web
+          name: minicdn-origin
+          property: host
+      - key: LB_HOST
+        fromService:
+          type: web
+          name: minicdn-lb
+          property: host
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: minicdn-redis
+          property: host
+
+  # Redis Instance
+  - type: redis
+    name: minicdn-redis
+    ipAllowList: []
+    plan: free
+
+databases:
+  - name: minicdn-db
+    databaseName: minicdn
+    user: postgres
+    plan: free
