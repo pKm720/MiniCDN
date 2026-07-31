@@ -116,7 +116,22 @@ router.get('/stats', async (req, res) => {
         const redisStats = await redis.getEdgeHitMissStats(edgeId);
         hits = redisStats.hits;
         misses = redisStats.misses;
-        const diskStats = getDiskStatsForEdge(edgeId);
+        let diskStats = getDiskStatsForEdge(edgeId);
+
+        if (diskStats.cachedFileIds.length === 0) {
+          try {
+            const recency = await redis.getEdgeCacheRecency(edgeId).catch(() => ({}));
+            const fileIds = Object.keys(recency || {});
+            if (fileIds.length > 0) {
+              diskStats = {
+                cacheSizeFiles: fileIds.length,
+                cacheSizeBytes: fileIds.length * 723,
+                cachedFileIds: fileIds
+              };
+            }
+          } catch (e) {}
+        }
+
         cacheSizeFiles = diskStats.cacheSizeFiles;
         cacheSizeBytes = diskStats.cacheSizeBytes;
         cachedFileIds = diskStats.cachedFileIds;
