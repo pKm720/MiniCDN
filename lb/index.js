@@ -37,14 +37,16 @@ app.get('/health', (req, res) => {
 
 async function startServer() {
   try {
-    await db.initDb();
+    await db.initDb().catch(err => logger.warn({ err: err.message || err }, 'DB init warning - using memory fallback'));
     healthMonitor.startHealthMonitor(parseInt(process.env.HEALTH_CHECK_INTERVAL_MS || '10000', 10));
-    app.listen(PORT, () => {
-      logger.info(`Load Balancer running on port ${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`Load Balancer running on port ${PORT} (0.0.0.0)`);
     });
   } catch (err) {
-    logger.error({ err }, 'Failed to start Load Balancer');
-    process.exit(1);
+    logger.error({ err: err.message || err }, 'Failed to start Load Balancer in primary mode');
+    app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`Load Balancer running on port ${PORT} in fallback mode`);
+    });
   }
 }
 
