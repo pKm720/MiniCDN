@@ -550,8 +550,9 @@
   </div>
 
   <script>
-    const LB_BASE = 'http://localhost:3000';
-    const ORIGIN_BASE = 'http://localhost:4000';
+    const isCloud = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    const LB_BASE = isCloud ? window.location.origin : 'http://localhost:3000';
+    const ORIGIN_BASE = isCloud ? window.location.origin : 'http://localhost:4000';
 
     let hitMissChart = null;
     let availableTopFiles = [];
