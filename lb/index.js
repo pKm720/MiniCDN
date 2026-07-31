@@ -40,8 +40,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'load-balancer', port: PORT });
 });
 
+const redis = require('../shared/redis');
+
 async function startServer() {
   try {
+    await redis.initRedis().catch(() => {});
     await db.initDb().catch(err => logger.warn({ err: err.message || err }, 'DB init warning - using memory fallback'));
     healthMonitor.startHealthMonitor(parseInt(process.env.HEALTH_CHECK_INTERVAL_MS || '10000', 10));
     app.listen(PORT, '0.0.0.0', () => {
