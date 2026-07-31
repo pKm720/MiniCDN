@@ -16,4 +16,4 @@ COPY . .
 EXPOSE 3000 3001 3002 3003 4000
 
 # Default command (overridden by docker-compose)
-CMD ["npm", "run", "start:origin"]
+CMD ["npm", "run", "start:lb"]
