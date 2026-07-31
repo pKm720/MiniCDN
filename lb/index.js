@@ -27,8 +27,13 @@ app.use((req, res, next) => {
 app.use('/dashboard', express.static(path.join(__dirname, '../dashboard')));
 app.use('/cdn-dashboard', express.static(path.join(__dirname, '../../CDN_FrontEnd')));
 
+const originUpload = require('../origin/routes/upload');
+const topFiles = require('../origin/routes/top_files');
+
 app.use('/lb', heartbeatRoutes);
 app.use('/lb', statsRoutes);
+app.use('/origin', originUpload);
+app.use('/origin', topFiles);
 app.use('/lb', lbRouter);
 
 app.get('/health', (req, res) => {
