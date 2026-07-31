@@ -4,6 +4,7 @@
   "description": "Single-repo multi-process CDN simulation",
   "main": "origin/index.js",
   "scripts": {
+    "start": "node lb/index.js",
     "start:origin": "node origin/index.js",
     "start:edge": "node edge/index.js",
     "start:lb": "node lb/index.js",

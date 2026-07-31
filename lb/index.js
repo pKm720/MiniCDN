@@ -10,7 +10,7 @@ const healthMonitor = require('./health_monitor');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT_LB || 3000;
+const PORT = process.env.PORT || process.env.PORT_LB || 3000;
 
 app.use(express.json());
 
