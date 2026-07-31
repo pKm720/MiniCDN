@@ -8,7 +8,7 @@ const router = express.Router();
 // GET /origin/top-files — Returns top 5 files sorted by download count descending
 router.get('/top-files', async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit || '5', 10);
+    const limit = parseInt(req.query.limit || '100', 10);
     const dbRes = await db.query('SELECT id, filename, download_count, hash, size, mime, created_at FROM files');
     const files = dbRes.rows || [];
 

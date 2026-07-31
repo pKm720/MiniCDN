@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../../shared/logger');
 const redis = require('../../shared/redis');
-const lru = require('../cache/lru');
+const lru = require('../lru');
 
 const router = express.Router();
 const EDGE_ID = parseInt(process.env.EDGE_ID || '1', 10);

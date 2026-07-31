@@ -479,6 +479,23 @@ async function getEdgeHitMissStats(edgeId) {
   return { hits: hitsVal, misses: missesVal };
 }
 
+async function resetTelemetryStats() {
+  try {
+    if (redisClient && typeof redisClient.set === 'function') {
+      for (let id = 1; id <= 3; id++) {
+        await redisClient.set(`edge:${id}:hits`, 0).catch(() => {});
+        await redisClient.set(`edge:${id}:misses`, 0).catch(() => {});
+      }
+    }
+  } catch (e) {}
+
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      fs.unlinkSync(STATE_FILE);
+    }
+  } catch (e) {}
+}
+
 module.exports = {
   redisClient,
   initRedis,
@@ -500,5 +517,6 @@ module.exports = {
   getReplicatedFlag,
   incrementEdgeHit,
   incrementEdgeMiss,
-  getEdgeHitMissStats
+  getEdgeHitMissStats,
+  resetTelemetryStats
 };

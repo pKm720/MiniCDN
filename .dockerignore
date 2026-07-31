@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.git
+.env
+.db_state.json
+.redis_state.json
+edge/cache
+origin/storage

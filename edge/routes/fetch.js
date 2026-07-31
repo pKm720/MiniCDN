@@ -5,7 +5,7 @@ const path = require('path');
 const http = require('http');
 const logger = require('../../shared/logger');
 const redis = require('../../shared/redis');
-const lru = require('../cache/lru');
+const lru = require('../lru');
 const replication = require('../../shared/replication');
 
 const MAX_CACHE_FILES = parseInt(process.env.MAX_CACHE_FILES || '20', 10);

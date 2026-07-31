@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniCDN — Operations & Telemetry Dashboard</title>
+
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #141619;
+      --panel-bg: #1e2228;
+      --panel-border: #2d333b;
+      --header-bg: #1b1b1b;
+      --accent-green: #89bf04;
+      --accent-green-hover: #9cdb05;
+      --text-main: #e6edf3;
+      --text-muted: #8b949e;
+      --status-healthy: #2da44e;
+      --status-offline: #cf222e;
+      --badge-bg: #2d333b;
+      --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      line-height: 1.5;
+      padding-bottom: 40px;
+    }
+
+    /* Top Swagger-style Navbar */
+    .navbar {
+      background-color: var(--header-bg);
+      border-bottom: 2px solid var(--accent-green);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      background-color: var(--accent-green);
+      color: #141619;
+      font-weight: 700;
+      font-size: 16px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .nav-stats {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 14px;
+    }
+
+    .nav-badge {
+      background-color: var(--badge-bg);
+      border: 1px solid var(--panel-border);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
+
+    .nav-badge span {
+      color: var(--accent-green);
+      font-weight: 600;
+    }
+
+    .refresh-timer {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* System Status Banner */
+    .error-banner {
+      display: none;
+      background-color: #3c1e1e;
+      border: 1px solid #cf222e;
+      color: #ff7b72;
+      padding: 12px 24px;
+      margin: 20px 24px 0 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Main Container Grid */
+    .container {
+      max-width: 1400px;
+      margin: 24px auto 0 auto;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Section Cards */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 992px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background-color: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .endpoint-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background-color: #0d1117;
+      color: #58a6ff;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid #1f6feb;
+    }
+
+    /* Panel 1: Health Cards */
+    .edge-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+
+    .edge-card {
+      background-color: #16191d;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .edge-card:hover {
+      transform: translateY(-2px);
+      border-color: #444c56;
+    }
+
+    .edge-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .edge-name {
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .status-dot.healthy {
+      background-color: var(--status-healthy);
+      color: var(--status-healthy);
+    }
+
+    .status-dot.offline {
+      background-color: var(--status-offline);
+      color: var(--status-offline);
+    }
+
+    .edge-metric {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .edge-metric val {
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+
+    /* Panel 2: Hit Ratio & Chart */
+    .hit-ratio-display {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin-bottom: 16px;
+      background-color: #16191d;
+      padding: 16px;
+      border-radius: 6px;
+    }
+
+    .big-number {
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--accent-green);
+      font-family: var(--font-mono);
+      line-height: 1;
+    }
+
+    .big-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 220px;
+      width: 100%;
+    }
+
+    /* Panel 3 & 4: Tables */
+    .table-responsive {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #16191d;
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--panel-border);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--panel-border);
+      font-family: var(--font-mono);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .node-tag {
+      display: inline-block;
+      background-color: #1f6feb22;
+      color: #58a6ff;
+      border: 1px solid #1f6feb44;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+
+    .replicated-tag {
+      background-color: #2da44e22;
+      color: #3fb950;
+      border-color: #2da44e44;
+    }
+
+    /* Simulation Control Bar */
+    .sim-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      background-color: #16191d;
+      padding: 14px 18px;
+      border-radius: 6px;
+      border: 1px solid var(--panel-border);
+    }
+
+    .sim-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sim-group label {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .sim-input {
+      background-color: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      width: 90px;
+    }
+
+    .sim-input:focus {
+      outline: none;
+      border-color: var(--accent-green);
+    }
+
+    .sim-btn {
+      background-color: var(--accent-green);
+      color: #141619;
+      border: none;
+      font-weight: 600;
+      font-size: 13.5px;
+      padding: 7px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sim-btn:hover {
+      background-color: var(--accent-green-hover);
+    }
+
+    .sim-btn.upload-btn {
+      background-color: #1f6feb;
+      color: #ffffff;
+    }
+
+    .sim-btn.upload-btn:hover {
+      background-color: #388bfd;
+    }
+
+    .sim-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .sim-status {
+      font-size: 13px;
+      color: var(--accent-green);
+      font-family: var(--font-mono);
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <div class="navbar">
+    <div class="brand">
+      <div class="brand-logo">MiniCDN</div>
+      <div class="brand-title">Operations & Telemetry Dashboard</div>
+    </div>
+    <div class="nav-stats">
+      <div class="nav-badge">Cluster Hit Ratio: <span id="nav-hit-ratio">0.0%</span></div>
+      <div class="nav-badge">Active Edges: <span id="nav-healthy-count">0/3</span></div>
+      <div class="refresh-timer">Last Refreshed: <span id="last-updated">--:--:--</span></div>
+    </div>
+  </div>
+
+  <!-- Error Banner -->
+  <div id="error-banner" class="error-banner">
+    ⚠️ <strong>Unable to connect to Load Balancer / Backend.</strong> Polling will retry automatically...
+  </div>
+
+  <div class="container">
+
+    <!-- Interactive Traffic Simulator -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">⚡ Interactive Control (Upload & Simulate Traffic)</div>
+        <div class="endpoint-tag">GET /lb/file/:id</div>
+      </div>
+      <div class="sim-bar">
+        <button id="upload-btn" class="sim-btn upload-btn" onclick="uploadDemoFile()">
+          📤 1. Upload Demo File to Origin
+        </button>
+        <div style="border-left: 1px solid var(--panel-border); height: 24px; margin: 0 4px;"></div>
+        <div class="sim-group">
+          <label for="sim-file-select">📁 Pick Uploaded File:</label>
+          <select id="sim-file-select" class="sim-input" style="background:#0d1117; color:#58a6ff; font-weight:600; border:1px solid #1f6feb; border-radius:4px; padding:4px 8px; font-family:var(--font-mono); min-width:210px;" onchange="document.getElementById('sim-file-id').value = this.value">
+            <option value="1">No files uploaded yet (Default: 1)</option>
+          </select>
+          <label for="sim-file-id" style="margin-left:4px;">or ID:</label>
+          <input type="number" id="sim-file-id" class="sim-input" value="1" min="1" style="width:65px;">
+        </div>
+        <div class="sim-group">
+          <label for="sim-count">Downloads (N):</label>
+          <input type="number" id="sim-count" class="sim-input" value="25" min="1" max="500">
+        </div>
+        <button id="sim-btn" class="sim-btn" onclick="triggerSimulatedTraffic()">
+          ▶ 2. Fire N Requests
+        </button>
+        <button id="reset-btn" class="sim-btn" style="background-color: #cf222e; color: white;" onclick="resetAllStats()">
+          🔄 3. Clear & Reset Graph
+        </button>
+        <div id="sim-status" class="sim-status">Ready</div>
+      </div>
+    </div>
+
+    <!-- Top Grid: Health & Hit Ratio -->
+    <div class="grid-2">
+      
+      <!-- Panel 1: Cluster Health -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">📡 Cluster Node Health</div>
+          <div class="endpoint-tag">GET /lb/stats</div>
+        </div>
+        <div id="edge-cards" class="edge-cards">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- Panel 2: Hit Ratio & Chart -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">📊 Cluster Hit Ratio & Telemetry</div>
+          <div class="endpoint-tag">Chart.js</div>
+        </div>
+        <div class="hit-ratio-display">
+          <div>
+            <div id="overall-hit-ratio" class="big-number">0.0%</div>
+            <div class="big-label">Overall Hit Ratio</div>
+          </div>
+          <div style="border-left: 1px solid var(--panel-border); padding-left: 20px;">
+            <div id="total-requests-count" class="big-number" style="color: #58a6ff;">0</div>
+            <div class="big-label">Total Requests</div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="hitMissChart"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Grid: Cache Contents & Replication View -->
+    <div class="grid-2">
+
+      <!-- Panel 3: Cache Contents per Edge -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">💾 Edge Cache Footprint & LRU State</div>
+          <div class="endpoint-tag">GET /edge/stats</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Edge Node</th>
+                <th>Status</th>
+                <th>Files Cached</th>
+                <th>Disk Size</th>
+                <th>Cached File IDs</th>
+              </tr>
+            </thead>
+            <tbody id="cache-contents-tbody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Panel 4: Popularity Replication View -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🌐 Popularity & Proactive Replication</div>
+          <div class="endpoint-tag">GET /origin/top-files</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>File ID / Name</th>
+                <th>Downloads</th>
+                <th>Replication Status</th>
+                <th>Present On Edges</th>
+              </tr>
+            </thead>
+            <tbody id="replication-tbody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    const LB_BASE = 'http://localhost:3000';
+    const ORIGIN_BASE = 'http://localhost:4000';
+
+    let hitMissChart = null;
+    let availableTopFiles = [];
+
+    // Initialize Chart.js
+    function initChart() {
+      const ctx = document.getElementById('hitMissChart').getContext('2d');
+      hitMissChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['Edge 1', 'Edge 2', 'Edge 3'],
+          datasets: [
+            {
+              label: 'Hits',
+              data: [0, 0, 0],
+              backgroundColor: '#2da44e',
+              borderRadius: 4
+            },
+            {
+              label: 'Misses',
+              data: [0, 0, 0],
+              backgroundColor: '#cf222e',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#8b949e', font: { family: 'Inter', size: 12 } }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#8b949e', font: { family: 'Inter' } },
+              grid: { color: '#2d333b' }
+            },
+            y: {
+              ticks: { color: '#8b949e', font: { family: 'Inter' }, precision: 0 },
+              grid: { color: '#2d333b' },
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+
+    async function refreshAll() {
+      const timeStr = new Date().toLocaleTimeString();
+      document.getElementById('last-updated').innerText = timeStr;
+
+      try {
+        const [lbRes, topRes] = await Promise.all([
+          fetch(`${LB_BASE}/lb/stats`).catch(() => null),
+          fetch(`${ORIGIN_BASE}/origin/top-files?limit=100`).catch(() => null)
+        ]);
+
+        if (!lbRes || !lbRes.ok) {
+          document.getElementById('error-banner').style.display = 'flex';
+          return;
+        }
+
+        document.getElementById('error-banner').style.display = 'none';
+        const lbData = await lbRes.json();
+        const topData = topRes && topRes.ok ? await topRes.json() : { topFiles: [] };
+        availableTopFiles = topData.topFiles || [];
+
+        renderHeader(lbData);
+        renderClusterHealth(lbData.edges || []);
+        renderHitRatio(lbData);
+        renderCacheContents(lbData.edges || []);
+        renderReplicationView(availableTopFiles, lbData.edges || []);
+        populateFileDropdown(availableTopFiles);
+
+      } catch (err) {
+        document.getElementById('error-banner').style.display = 'flex';
+      }
+    }
+
+    function populateFileDropdown(files) {
+      const select = document.getElementById('sim-file-select');
+      if (!select) return;
+      const currentVal = document.getElementById('sim-file-id').value;
+      select.innerHTML = '';
+
+      if (!files || files.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '1';
+        opt.innerText = 'No files uploaded yet (Default: ID 1)';
+        select.appendChild(opt);
+        return;
+      }
+
+      files.forEach(file => {
+        const opt = document.createElement('option');
+        opt.value = file.id;
+        opt.innerText = `File ID: ${file.id} — ${file.filename || 'file'} (${file.downloadCount || 0} downloads)`;
+        if (String(file.id) === String(currentVal)) {
+          opt.selected = true;
+        }
+        select.appendChild(opt);
+      });
+    }
+
+    function renderHeader(data) {
+      const ratioPct = (data.overallHitRatio * 100).toFixed(1) + '%';
+      document.getElementById('nav-hit-ratio').innerText = ratioPct;
+      document.getElementById('nav-healthy-count').innerText = `${data.healthyEdgesCount || 0}/${data.totalEdgesCount || 3}`;
+      document.getElementById('overall-hit-ratio').innerText = ratioPct;
+      document.getElementById('total-requests-count').innerText = data.totalRequests || 0;
+    }
+
+    function renderClusterHealth(edges) {
+      const container = document.getElementById('edge-cards');
+      container.innerHTML = '';
+
+      edges.forEach(edge => {
+        const isHealthy = edge.status === 'healthy';
+        const card = document.createElement('div');
+        card.className = 'edge-card';
+        card.innerHTML = `
+          <div class="edge-card-head">
+            <div class="edge-name">${edge.edgeName || 'edge-' + edge.edgeId}</div>
+            <span class="status-dot ${isHealthy ? 'healthy' : 'offline'}" title="${edge.status}"></span>
+          </div>
+          <div class="edge-metric"><span>Port:</span><val>300${edge.edgeId}</val></div>
+          <div class="edge-metric"><span>Hits:</span><val>${edge.hits || 0}</val></div>
+          <div class="edge-metric"><span>Misses:</span><val>${edge.misses || 0}</val></div>
+          <div class="edge-metric"><span>Total Req:</span><val>${edge.totalRequests || 0}</val></div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderHitRatio(data) {
+      if (!hitMissChart) return;
+      const edges = data.edges || [];
+      const labels = edges.map(e => e.edgeName || `edge-${e.edgeId}`);
+      const hitsData = edges.map(e => e.hits || 0);
+      const missesData = edges.map(e => e.misses || 0);
+
+      hitMissChart.data.labels = labels;
+      hitMissChart.data.datasets[0].data = hitsData;
+      hitMissChart.data.datasets[1].data = missesData;
+      hitMissChart.update();
+    }
+
+    function renderCacheContents(edges) {
+      const tbody = document.getElementById('cache-contents-tbody');
+      tbody.innerHTML = '';
+
+      if (edges.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No edges registered</td></tr>';
+        return;
+      }
+
+      edges.forEach(edge => {
+        const isHealthy = edge.status === 'healthy';
+        const fileList = (edge.cachedFileIds || []).map(id => `<span class="node-tag">ID: ${id}</span>`).join('') || '<span style="color:var(--text-muted);">empty</span>';
+        const bytesFormatted = formatBytes(edge.cacheSizeBytes || 0);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${edge.edgeName || 'edge-' + edge.edgeId}</strong></td>
+          <td><span class="status-dot ${isHealthy ? 'healthy' : 'offline'}"></span> ${edge.status}</td>
+          <td>${edge.cacheSizeFiles || 0} files</td>
+          <td>${bytesFormatted}</td>
+          <td>${fileList}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderReplicationView(topFiles, edges) {
+      const tbody = document.getElementById('replication-tbody');
+      tbody.innerHTML = '';
+
+      if (topFiles.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted); text-align:center;">No files uploaded yet. Click "1. Upload Demo File" above!</td></tr>';
+        return;
+      }
+
+      topFiles.forEach(file => {
+        const fileIdStr = String(file.id);
+        const presentEdges = edges
+          .filter(e => e.status === 'healthy' && (e.cachedFileIds || []).map(String).includes(fileIdStr))
+          .map(e => e.edgeName || `edge-${e.edgeId}`);
+
+        const isProactive = (file.downloadCount >= 20);
+        const presentTags = presentEdges.map(name => `<span class="node-tag ${isProactive ? 'replicated-tag' : ''}">${name}</span>`).join('') || '<span style="color:var(--text-muted);">None</span>';
+        
+        let replStatusText = 'Organic (1 Edge)';
+        let statusColor = 'var(--text-muted)';
+
+        if (isProactive) {
+          replStatusText = '⚡ Proactively Replicated (Threshold ≥ 20)';
+          statusColor = '#3fb950';
+        } else if (presentEdges.length > 1) {
+          replStatusText = `Organic (Cached on ${presentEdges.length} Edges via LB)`;
+          statusColor = '#58a6ff';
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${file.filename}</strong> (ID: ${file.id})</td>
+          <td><span style="color:var(--accent-green); font-weight:600;">${file.downloadCount}</span></td>
+          <td><span style="font-size:12px; color:${statusColor}; font-weight:600;">${replStatusText}</span></td>
+          <td>${presentTags}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    async function uploadDemoFile() {
+      const btn = document.getElementById('upload-btn');
+      const statusEl = document.getElementById('sim-status');
+      btn.disabled = true;
+      statusEl.innerText = 'Uploading demo file...';
+
+      try {
+        const demoContent = "Hello MiniCDN Demo File content! " + Date.now();
+        const blob = new Blob([demoContent], { type: 'text/plain' });
+        const formData = new FormData();
+        formData.append('file', blob, 'demo_sample.txt');
+
+        // Demo admin token
+        const jwtHeader = 'demo-admin-token';
+
+        const res = await fetch(`${ORIGIN_BASE}/origin/upload`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${jwtHeader}` },
+          body: formData
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const fileId = data.id || (data.file && data.file.id);
+          statusEl.innerText = `✅ Demo File Uploaded! (ID: ${fileId})`;
+          document.getElementById('sim-file-id').value = fileId;
+          await refreshAll();
+          btn.disabled = false;
+          return fileId;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          statusEl.innerText = `⚠️ Upload failed: ${errData.error || res.statusText}`;
+        }
+      } catch (err) {
+        statusEl.innerText = '⚠️ Cannot reach Origin (Port 4000)';
+      }
+      btn.disabled = false;
+      return null;
+    }
+
+    async function triggerSimulatedTraffic() {
+      let fileId = document.getElementById('sim-file-id').value || 1;
+      const count = parseInt(document.getElementById('sim-count').value || 25, 10);
+      const btn = document.getElementById('sim-btn');
+      const statusEl = document.getElementById('sim-status');
+
+      // Auto-upload if no files exist yet
+      if (availableTopFiles.length === 0) {
+        statusEl.innerText = 'No files found on Origin. Creating demo file first...';
+        const newId = await uploadDemoFile();
+        if (newId) fileId = newId;
+      }
+
+      btn.disabled = true;
+      statusEl.innerText = `Firing 0/${count} downloads...`;
+
+      const batchSize = 5;
+      for (let i = 0; i < count; i += batchSize) {
+        const currentBatch = Math.min(batchSize, count - i);
+        const fetches = Array.from({ length: currentBatch }, () => fetch(`${LB_BASE}/lb/file/${fileId}`).catch(() => {}));
+        await Promise.all(fetches);
+        statusEl.innerText = `Firing ${Math.min(i + currentBatch, count)}/${count} downloads...`;
+      }
+
+      statusEl.innerText = `✅ Fired ${count} downloads to File ${fileId}!`;
+      btn.disabled = false;
+      await refreshAll();
+    }
+
+    async function resetAllStats() {
+      const statusEl = document.getElementById('sim-status');
+      statusEl.innerText = 'Resetting telemetry stats...';
+      try {
+        await fetch(`${LB_BASE}/lb/reset`, { method: 'POST' }).catch(() => {});
+        statusEl.innerText = '✅ Telemetry Graph Reset to 0!';
+        await refreshAll();
+      } catch (err) {
+        statusEl.innerText = '⚠️ Reset failed';
+      }
+    }
+
+    // On DOM Loaded
+    document.addEventListener('DOMContentLoaded', () => {
+      initChart();
+      refreshAll();
+      setInterval(refreshAll, 4000);
+    });
+  </script>
+</body>
+</html>

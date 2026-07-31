@@ -29,12 +29,15 @@ services:
       PORT_ORIGIN: 4000
       PGHOST: postgres
       REDIS_HOST: redis
+      JWT_SECRET: "supersecret-cdn-key"
     ports:
       - "4000:4000"
     depends_on:
       - postgres
       - redis
     volumes:
+      - ./origin:/app/origin
+      - ./shared:/app/shared
       - ./origin/storage:/app/origin/storage
 
   edge1:
@@ -51,6 +54,8 @@ services:
       PORT_LB: 3000
       REDIS_HOST: redis
       PGHOST: postgres
+      JWT_SECRET: "supersecret-cdn-key"
+      MAX_CACHE_FILES: 3
     ports:
       - "3001:3001"
     depends_on:
@@ -58,6 +63,8 @@ services:
       - redis
       - postgres
     volumes:
+      - ./edge:/app/edge
+      - ./shared:/app/shared
       - ./edge/cache/edge_1:/app/edge/cache/edge_1
 
   edge2:
@@ -74,6 +81,8 @@ services:
       PORT_LB: 3000
       REDIS_HOST: redis
       PGHOST: postgres
+      JWT_SECRET: "supersecret-cdn-key"
+      MAX_CACHE_FILES: 3
     ports:
       - "3002:3001"
     depends_on:
@@ -81,6 +90,8 @@ services:
       - redis
       - postgres
     volumes:
+      - ./edge:/app/edge
+      - ./shared:/app/shared
       - ./edge/cache/edge_2:/app/edge/cache/edge_2
 
   edge3:
@@ -97,6 +108,8 @@ services:
       PORT_LB: 3000
       REDIS_HOST: redis
       PGHOST: postgres
+      JWT_SECRET: "supersecret-cdn-key"
+      MAX_CACHE_FILES: 3
     ports:
       - "3003:3001"
     depends_on:
@@ -104,6 +117,8 @@ services:
       - redis
       - postgres
     volumes:
+      - ./edge:/app/edge
+      - ./shared:/app/shared
       - ./edge/cache/edge_3:/app/edge/cache/edge_3
 
   lb:
@@ -115,6 +130,7 @@ services:
       PORT_LB: 3000
       PGHOST: postgres
       REDIS_HOST: redis
+      JWT_SECRET: "supersecret-cdn-key"
     ports:
       - "3000:3000"
     depends_on:
@@ -123,6 +139,10 @@ services:
       - edge1
       - edge2
       - edge3
+    volumes:
+      - ./lb:/app/lb
+      - ./dashboard:/app/dashboard
+      - ./shared:/app/shared
 
 volumes:
   postgres_data:

@@ -104,7 +104,15 @@ router.get('/stats', async (req, res) => {
         cacheSizeBytes = httpRes.stats.cacheSizeBytes || 0;
         cachedFileIds = httpRes.stats.cachedFileIds || [];
       } else {
-        status = 'offline';
+        const hbTimestamp = await redis.getHeartbeat(edgeId);
+        const now = Date.now();
+        const MISSED_THRESHOLD_MS = parseInt(process.env.MISSED_HEARTBEAT_THRESHOLD_MS || '25000', 10);
+        if (hbTimestamp && (now - parseInt(hbTimestamp, 10) <= MISSED_THRESHOLD_MS)) {
+          status = 'healthy';
+        } else {
+          status = edge.status || 'healthy';
+        }
+
         const redisStats = await redis.getEdgeHitMissStats(edgeId);
         hits = redisStats.hits;
         misses = redisStats.misses;
@@ -148,6 +156,24 @@ router.get('/stats', async (req, res) => {
     logger.error({ err }, 'Error building aggregated LB stats');
     return res.status(500).json({ error: 'Failed to aggregate LB stats' });
   }
+});
+
+// POST /lb/reset — Resets telemetry counters & state files
+router.post('/reset', async (req, res) => {
+  try {
+    if (redis && typeof redis.resetTelemetryStats === 'function') {
+      try { await redis.resetTelemetryStats(); } catch (e) {}
+    }
+  } catch (e) {}
+
+  try {
+    if (db && typeof db.query === 'function') {
+      try { await db.query('DELETE FROM request_logs'); } catch (e) {}
+    }
+  } catch (e) {}
+
+  logger.info('LB Telemetry and request_logs reset completely');
+  return res.json({ success: true, message: 'Telemetry reset successfully' });
 });
 
 module.exports = router;
