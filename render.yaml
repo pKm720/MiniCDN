@@ -18,25 +18,9 @@ services:
           property: host
       - key: REDIS_HOST
         fromService:
-          type: redis
+          type: pserv
           name: minicdn-redis
           property: host
-      - key: PGHOST
-        fromDatabase:
-          name: minicdn-db
-          property: host
-      - key: PGUSER
-        fromDatabase:
-          name: minicdn-db
-          property: user
-      - key: PGPASSWORD
-        fromDatabase:
-          name: minicdn-db
-          property: password
-      - key: PGDATABASE
-        fromDatabase:
-          name: minicdn-db
-          property: database
 
   # Origin Server
   - type: web
@@ -52,12 +36,8 @@ services:
         value: "supersecret-cdn-key"
       - key: REDIS_HOST
         fromService:
-          type: redis
+          type: pserv
           name: minicdn-redis
-          property: host
-      - key: PGHOST
-        fromDatabase:
-          name: minicdn-db
           property: host
 
   # Edge Server 1
@@ -88,7 +68,7 @@ services:
           property: host
       - key: REDIS_HOST
         fromService:
-          type: redis
+          type: pserv
           name: minicdn-redis
           property: host
 
@@ -120,7 +100,7 @@ services:
           property: host
       - key: REDIS_HOST
         fromService:
-          type: redis
+          type: pserv
           name: minicdn-redis
           property: host
 
@@ -152,18 +132,14 @@ services:
           property: host
       - key: REDIS_HOST
         fromService:
-          type: redis
+          type: pserv
           name: minicdn-redis
           property: host
 
-  # Redis Instance
-  - type: redis
+  # Redis Private Service
+  - type: pserv
     name: minicdn-redis
-    ipAllowList: []
-    plan: free
-
-databases:
-  - name: minicdn-db
-    databaseName: minicdn
-    user: postgres
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerCommand: redis-server
     plan: free
