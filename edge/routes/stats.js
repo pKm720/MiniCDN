@@ -83,4 +83,27 @@ router.get('/:id/stats', async (req, res) => {
   }
 });
 
+// POST /edge/purge — Purge disk cache files and LRU state for this edge server
+router.post('/purge', (req, res) => {
+  const currentEdgeId = parseInt(process.env.EDGE_ID || '1', 10);
+  const cacheDir = path.join(__dirname, `../cache/edge_${currentEdgeId}`);
+  if (fs.existsSync(cacheDir)) {
+    try {
+      const files = fs.readdirSync(cacheDir);
+      for (const f of files) {
+        if (f !== '.gitkeep') {
+          try { fs.unlinkSync(path.join(cacheDir, f)); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+  try {
+    const lru = require('../lru');
+    if (lru && typeof lru.clear === 'function') lru.clear();
+  } catch (e) {}
+
+  logger.info({ edgeId: currentEdgeId }, 'Edge node disk cache and LRU state purged via LB command');
+  return res.json({ success: true, message: `Edge ${currentEdgeId} cache purged successfully` });
+});
+
 module.exports = router;

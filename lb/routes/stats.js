@@ -199,19 +199,34 @@ router.post('/reset', async (req, res) => {
     try { if (fs.existsSync(redisStateFile)) fs.writeFileSync(redisStateFile, JSON.stringify({ sets: {}, hashes: {}, kv: {} }), 'utf8'); } catch (e) {}
     try { if (fs.existsSync(dbStateFile)) fs.writeFileSync(dbStateFile, JSON.stringify({ files: [], request_logs: [] }), 'utf8'); } catch (e) {}
 
-    // 2. Clear edge disk cache directories
+    // 2. Clear edge disk cache directories & notify edge containers via RPC
     for (let id = 1; id <= 3; id++) {
+      // Local container filesystem cleanup fallback
       const edgeDir = path.join(__dirname, `../../edge/cache/edge_${id}`);
       if (fs.existsSync(edgeDir)) {
         try {
           const files = fs.readdirSync(edgeDir);
           for (const f of files) {
             if (f !== '.gitkeep') {
-              fs.unlinkSync(path.join(edgeDir, f));
+              try { fs.unlinkSync(path.join(edgeDir, f)); } catch (e) {}
             }
           }
         } catch (e) {}
       }
+
+      // RPC HTTP purge notification to edge container
+      try {
+        const target = cluster.getEdgeTarget(id);
+        const purgeReq = http.request({
+          hostname: target.hostname,
+          port: target.port,
+          path: '/edge/purge',
+          method: 'POST',
+          timeout: 1500
+        });
+        purgeReq.on('error', () => {});
+        purgeReq.end();
+      } catch (e) {}
     }
 
     // 3. Clear origin storage directory
