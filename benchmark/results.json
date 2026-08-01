@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-08-01T22:32:01.775Z",
+  "sampleSize": 30,
+  "spacingMs": 150,
+  "missStats": {
+    "avg": 9.21,
+    "min": 4.75,
+    "max": 45.22,
+    "stddev": 7.53
+  },
+  "hitStats": {
+    "avg": 7.28,
+    "min": 5.3,
+    "max": 16.03,
+    "stddev": 2.33
+  },
+  "reductionPercent": 20.96,
+  "testCasesPassed": {
+    "B.1_clean_state": true,
+    "B.2_miss_pass_genuine": true,
+    "B.3_hit_pass_genuine": true,
+    "B.4_hit_lower_than_miss": true,
+    "B.6_stability": true
+  }
+}
