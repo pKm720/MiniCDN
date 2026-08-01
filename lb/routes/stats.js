@@ -173,8 +173,10 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// POST /lb/reset — Resets telemetry counters & state files
+// POST /lb/reset — Resets telemetry counters & state files (supports deep purge)
 router.post('/reset', async (req, res) => {
+  const isDeep = req.query.deep === 'true' || (req.body && req.body.deep === true);
+
   try {
     if (redis && typeof redis.resetTelemetryStats === 'function') {
       try { await redis.resetTelemetryStats(); } catch (e) {}
@@ -183,9 +185,51 @@ router.post('/reset', async (req, res) => {
 
   try {
     if (db && typeof db.query === 'function') {
-      try { await db.query('DELETE FROM request_logs'); } catch (e) {}
+      try { await db.query('TRUNCATE request_logs RESTART IDENTITY CASCADE'); } catch (e) {}
+      if (isDeep) {
+        try { await db.query('TRUNCATE files RESTART IDENTITY CASCADE'); } catch (e) {}
+      }
     }
   } catch (e) {}
+
+  if (isDeep) {
+    // 1. Wipe Redis state file & db state file
+    const redisStateFile = path.join(__dirname, '../../shared/.redis_state.json');
+    const dbStateFile = path.join(__dirname, '../../shared/.db_state.json');
+    try { if (fs.existsSync(redisStateFile)) fs.writeFileSync(redisStateFile, JSON.stringify({ sets: {}, hashes: {}, kv: {} }), 'utf8'); } catch (e) {}
+    try { if (fs.existsSync(dbStateFile)) fs.writeFileSync(dbStateFile, JSON.stringify({ files: [], request_logs: [] }), 'utf8'); } catch (e) {}
+
+    // 2. Clear edge disk cache directories
+    for (let id = 1; id <= 3; id++) {
+      const edgeDir = path.join(__dirname, `../../edge/cache/edge_${id}`);
+      if (fs.existsSync(edgeDir)) {
+        try {
+          const files = fs.readdirSync(edgeDir);
+          for (const f of files) {
+            if (f !== '.gitkeep') {
+              fs.unlinkSync(path.join(edgeDir, f));
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    // 3. Clear origin storage directory
+    const originDir = path.join(__dirname, '../../origin/storage');
+    if (fs.existsSync(originDir)) {
+      try {
+        const files = fs.readdirSync(originDir);
+        for (const f of files) {
+          if (f !== '.gitkeep') {
+            fs.unlinkSync(path.join(originDir, f));
+          }
+        }
+      } catch (e) {}
+    }
+
+    logger.info('FULL SYSTEM DEEP PURGE completed: files, disk caches, db tables, and state files reset.');
+    return res.json({ success: true, message: 'Deep Purge completed successfully' });
+  }
 
   logger.info('LB Telemetry and request_logs reset completely');
   return res.json({ success: true, message: 'Telemetry reset successfully' });

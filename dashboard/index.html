@@ -454,8 +454,11 @@
         <button id="bench-btn" class="sim-btn" style="background-color: #8957e5; color: white;" onclick="runFrontEndBenchmark()">
           ⚡ Run Benchmark Suite
         </button>
-        <button id="reset-btn" class="sim-btn" style="background-color: #cf222e; color: white;" onclick="resetAllStats()">
-          🔄 Clear & Reset
+        <button id="reset-btn" class="sim-btn" style="background-color: #cf222e; color: white;" onclick="resetAllStats(false)">
+          🔄 Reset Graph
+        </button>
+        <button id="purge-btn" class="sim-btn" style="background-color: #da3633; color: white; border: 1px solid #f85149;" onclick="resetAllStats(true)">
+          💣 Deep System Purge
         </button>
         <div id="sim-status" class="sim-status">Ready</div>
       </div>
@@ -945,12 +948,19 @@
       btn.disabled = false;
     }
 
-    async function resetAllStats() {
+    async function resetAllStats(deep = false) {
       const statusEl = document.getElementById('sim-status');
-      statusEl.innerText = 'Resetting telemetry stats...';
+      if (deep) {
+        if (!confirm('💣 Are you sure you want to PURGE ALL uploaded files, edge disk caches, and database tables?')) return;
+        statusEl.innerText = 'Executing Deep System Purge...';
+      } else {
+        statusEl.innerText = 'Resetting telemetry stats...';
+      }
+
       try {
-        await fetch(`${LB_BASE}/lb/reset`, { method: 'POST' }).catch(() => {});
-        statusEl.innerText = '✅ Telemetry Graph Reset to 0!';
+        const url = deep ? `${LB_BASE}/lb/reset?deep=true` : `${LB_BASE}/lb/reset`;
+        await fetch(url, { method: 'POST' }).catch(() => {});
+        statusEl.innerText = deep ? '✅ System Deep Purge Complete!' : '✅ Telemetry Graph Reset to 0!';
         await refreshAll();
       } catch (err) {
         statusEl.innerText = '⚠️ Reset failed';
