@@ -9,6 +9,12 @@ let roundRobinIndex = 0;
 
 function forwardToEdge(edgeId, fileId, req, res) {
   return new Promise((resolve, reject) => {
+    // Fast fail for standalone cloud single-container deployments
+    const isStandaloneCloud = Boolean(process.env.PORT || process.env.RAILWAY_STATIC_URL || process.env.RENDER);
+    if (isStandaloneCloud && !process.env.HAS_EDGE_CONTAINERS) {
+      return reject(new Error('Standalone Cloud Fallback Triggered'));
+    }
+
     const startTime = Date.now();
     const target = cluster.getEdgeTarget(edgeId);
 
