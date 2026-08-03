@@ -31,8 +31,11 @@ app.use('/cdn-dashboard', express.static(path.join(__dirname, '../../CDN_FrontEn
 const originUpload = require('../origin/routes/upload');
 const topFiles = require('../origin/routes/top_files');
 
+const benchmarkRoutes = require('./routes/benchmark');
+
 app.use('/lb', heartbeatRoutes);
 app.use('/lb', statsRoutes);
+app.use('/lb', benchmarkRoutes);
 app.use('/origin', originUpload);
 app.use('/origin', topFiles);
 app.use('/lb', lbRouter);
