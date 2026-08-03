@@ -18,10 +18,14 @@ router.get('/file/:id', async (req, res) => {
     }
 
     const fileMeta = dbResult.rows[0];
-    const storagePath = path.join(STORAGE_DIR, String(fileId));
+    let storagePath = path.join(STORAGE_DIR, String(fileId));
+
+    if (!fs.existsSync(storagePath) && fileMeta && fileMeta.filename) {
+      storagePath = path.join(STORAGE_DIR, fileMeta.filename);
+    }
 
     if (!fs.existsSync(storagePath)) {
-      logger.error({ fileId, storagePath }, 'DB/Disk mismatch: File metadata exists in DB but raw file missing on disk');
+      logger.error({ fileId, storagePath, filename: fileMeta ? fileMeta.filename : null }, 'DB/Disk mismatch: File metadata exists in DB but raw file missing on disk');
       return res.status(404).json({ error: 'File missing from storage' });
     }
 

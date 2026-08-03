@@ -144,7 +144,7 @@ async function clearAllCaches() {
     const res = await makeHttpRequest({
       hostname: HOST,
       port: LB_PORT,
-      path: '/lb/reset',
+      path: '/lb/reset?deep=true',
       method: 'POST'
     });
     console.log(`   Reset Status: ${res.statusCode === 200 ? '✅ Success' : '⚠️ Warning'}`);

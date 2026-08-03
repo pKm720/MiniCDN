@@ -48,9 +48,15 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
 
     const fileId = insertResult.rows[0].id;
 
-    // Write file to origin/storage/{id}
-    const storagePath = path.join(STORAGE_DIR, String(fileId));
-    await fs.promises.writeFile(storagePath, fileBuffer);
+    if (!fs.existsSync(STORAGE_DIR)) {
+      fs.mkdirSync(STORAGE_DIR, { recursive: true });
+    }
+
+    // Write file to origin/storage/{id} and origin/storage/{filename}
+    const storagePathId = path.join(STORAGE_DIR, String(fileId));
+    const storagePathName = path.join(STORAGE_DIR, filename);
+    await fs.promises.writeFile(storagePathId, fileBuffer);
+    try { await fs.promises.writeFile(storagePathName, fileBuffer); } catch (e) {}
 
     logger.info({ fileId, filename, size, hash: computedHash }, 'File uploaded successfully');
 
