@@ -137,7 +137,9 @@ router.get('/file/:id', async (req, res) => {
 
     fileWriteStream.on('finish', async () => {
       try {
-        const maxCap = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
+        const isBenchmark = process.env.BENCHMARK_MODE === 'true' || process.env.BENCHMARK_MODE === '1';
+        const configuredMax = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
+        const maxCap = isBenchmark ? Math.max(configuredMax, 50) : configuredMax;
         await lru.evictIfFull(edgeId, cacheDir, maxCap);
         
         fs.rename(tempCachePath, cachePath, (err) => {

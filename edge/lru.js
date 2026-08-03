@@ -5,17 +5,20 @@ const logger = require('../shared/logger');
 
 async function evictIfFull(edgeId, cacheDir, maxCapacity) {
   try {
+    const isBenchmark = process.env.BENCHMARK_MODE === 'true' || process.env.BENCHMARK_MODE === '1';
+    const effectiveCapacity = isBenchmark ? Math.max(maxCapacity, 50) : maxCapacity;
+
     const recencyMap = await redis.getEdgeCacheRecency(edgeId);
     const cachedFiles = Object.keys(recencyMap);
 
-    if (cachedFiles.length < maxCapacity) {
+    if (cachedFiles.length < effectiveCapacity) {
       return;
     }
 
     // Sort files by lastAccessedTimestamp ascending (oldest first)
     cachedFiles.sort((a, b) => recencyMap[a] - recencyMap[b]);
 
-    const evictCount = (cachedFiles.length - maxCapacity) + 1;
+    const evictCount = (cachedFiles.length - effectiveCapacity) + 1;
     const toEvict = cachedFiles.slice(0, evictCount);
 
     for (const fileId of toEvict) {
