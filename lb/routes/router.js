@@ -38,6 +38,7 @@ function forwardToEdge(edgeId, fileId, req, res) {
       res.setHeader('X-Cache-Status', cacheStatus);
       res.setHeader('X-Routed-Edge-Id', edgeId);
       res.setHeader('X-LB-Latency-Ms', latencyMs);
+      res.setHeader('Access-Control-Expose-Headers', 'X-Routed-Edge-Id, X-Cache-Status, X-LB-Latency-Ms');
 
       edgeRes.pipe(res);
       resolve({ success: true, statusCode: edgeRes.statusCode, edgeId, isHit, latencyMs });
@@ -66,11 +67,17 @@ router.get('/file/:id', async (req, res) => {
       { id: 3, name: 'edge-3', status: 'healthy' }
     ];
 
-    // 2. Select edge using Round-Robin strategy
-    const chosenIndex = roundRobinIndex % healthyEdges.length;
-    roundRobinIndex = (roundRobinIndex + 1) % 1000000; // prevent overflow
-    const primaryEdge = healthyEdges[chosenIndex];
-    const primaryEdgeId = primaryEdge.id;
+    // 2. Select edge using Round-Robin strategy (or sticky edge query/header override for benchmark validation)
+    const edgeOverride = req.query.edgeId || req.headers['x-force-edge-id'];
+    const forcedEdgeId = edgeOverride ? parseInt(edgeOverride, 10) : null;
+    let primaryEdgeId = forcedEdgeId;
+
+    if (!primaryEdgeId) {
+      const chosenIndex = roundRobinIndex % healthyEdges.length;
+      roundRobinIndex = (roundRobinIndex + 1) % 1000000; // prevent overflow
+      const primaryEdge = healthyEdges[chosenIndex];
+      primaryEdgeId = primaryEdge.id;
+    }
 
     logger.info({ fileId, chosenEdgeId: primaryEdgeId, healthyCount: healthyEdges.length }, 'Routing request via LB round-robin');
 

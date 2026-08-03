@@ -18,7 +18,8 @@ app.use(express.json());
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-file-id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-file-id, x-force-edge-id');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Routed-Edge-Id, X-Cache-Status, X-Response-Time-MS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });

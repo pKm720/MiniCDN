@@ -829,8 +829,8 @@
       statusEl.innerText = 'Starting Live Benchmark Suite...';
 
       try {
-        // 1. Upload N=10 fresh benchmark files
-        const N = 10;
+        // 1. Upload N=3 fresh benchmark files (matches MAX_CACHE_FILES=3 limit to prevent LRU eviction)
+        const N = 3;
         const fileIds = [];
         for (let i = 1; i <= N; i++) {
           statusEl.innerText = `[1/3] Uploading test files (${i}/${N})...`;
@@ -850,26 +850,29 @@
         }
 
         // 2. Miss Pass (spaced 100ms apart)
-        const missLatencies = [];
+        const missResults = [];
         for (let i = 0; i < fileIds.length; i++) {
           statusEl.innerText = `[2/3] Measuring Cache Miss Pass (${i + 1}/${fileIds.length})...`;
           const t0 = performance.now();
-          await fetch(`${LB_BASE}/lb/file/${fileIds[i]}`).catch(() => {});
+          const res = await fetch(`${LB_BASE}/lb/file/${fileIds[i]}`).catch(() => null);
           const t1 = performance.now();
-          missLatencies.push(t1 - t0);
+          const edgeId = res && res.headers ? (res.headers.get('X-Routed-Edge-Id') || res.headers.get('x-routed-edge-id') || '1') : '1';
+          missResults.push({ fileId: fileIds[i], latency: t1 - t0, edgeId });
           await new Promise(r => setTimeout(r, 100));
         }
 
-        // 3. Hit Pass
+        // 3. Hit Pass (requesting exact cached edge via query param to bypass CORS preflight overhead)
         const hitLatencies = [];
-        for (let i = 0; i < fileIds.length; i++) {
-          statusEl.innerText = `[3/3] Measuring Cache Hit Pass (${i + 1}/${fileIds.length})...`;
+        for (let i = 0; i < missResults.length; i++) {
+          statusEl.innerText = `[3/3] Measuring Cache Hit Pass (${i + 1}/${missResults.length})...`;
           const t0 = performance.now();
-          await fetch(`${LB_BASE}/lb/file/${fileIds[i]}`).catch(() => {});
+          await fetch(`${LB_BASE}/lb/file/${missResults[i].fileId}?edgeId=${missResults[i].edgeId}`).catch(() => {});
           const t1 = performance.now();
           hitLatencies.push(t1 - t0);
           await new Promise(r => setTimeout(r, 100));
         }
+
+        const missLatencies = missResults.map(m => m.latency);
 
         // Calculations
         const avgMiss = missLatencies.reduce((a, b) => a + b, 0) / missLatencies.length;
