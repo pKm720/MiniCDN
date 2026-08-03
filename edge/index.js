@@ -8,7 +8,7 @@ const statsRoutes = require('./routes/stats');
 
 const app = express();
 const EDGE_ID = parseInt(process.env.EDGE_ID || '1', 10);
-const PORT = process.env.PORT_EDGE || (3000 + EDGE_ID);
+const PORT = 3000 + EDGE_ID;
 const LB_HOST = process.env.LB_HOST || 'localhost';
 const PORT_LB = process.env.PORT_LB || 3000;
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '10000', 10);

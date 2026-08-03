@@ -18,9 +18,16 @@ function forwardToEdge(edgeId, fileId, req, res) {
     const startTime = Date.now();
     const target = cluster.getEdgeTarget(edgeId);
 
-    const edgeUrl = `http://${target.hostname}:${target.port}/edge/file/${fileId}`;
+    const reqOptions = {
+      hostname: target.hostname,
+      port: target.port,
+      path: `/edge/file/${fileId}`,
+      method: 'GET',
+      headers: { 'X-Target-Edge-Id': String(edgeId) },
+      timeout: 3000
+    };
 
-    const edgeReq = http.get(edgeUrl, (edgeRes) => {
+    const edgeReq = http.request(reqOptions, (edgeRes) => {
       const latencyMs = Date.now() - startTime;
       const cacheStatus = edgeRes.headers['x-cache-status'] || 'MISS';
       const isHit = cacheStatus === 'HIT';
@@ -48,10 +55,12 @@ function forwardToEdge(edgeId, fileId, req, res) {
       reject(err);
     });
 
-    edgeReq.setTimeout(5000, () => {
+    edgeReq.setTimeout(300, () => {
       edgeReq.destroy();
       reject(new Error(`Timeout forwarding request to Edge ${edgeId}`));
     });
+
+    edgeReq.end();
   });
 }
 
@@ -61,7 +70,7 @@ router.get('/file/:id', async (req, res) => {
   try {
     // 1. Fetch currently healthy edges from database
     const dbResult = await db.query("SELECT * FROM edges WHERE status = 'healthy' ORDER BY id ASC").catch(() => null);
-    let healthyEdges = dbResult && dbResult.rows && dbResult.rows.length > 0 ? dbResult.rows : [
+    let healthyEdges = (dbResult && dbResult.rows && dbResult.rows.length > 0) ? dbResult.rows : [
       { id: 1, name: 'edge-1', status: 'healthy' },
       { id: 2, name: 'edge-2', status: 'healthy' },
       { id: 3, name: 'edge-3', status: 'healthy' }

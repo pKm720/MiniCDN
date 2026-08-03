@@ -8,6 +8,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { fork } = require('child_process');
 const { performance } = require('perf_hooks');
 const db = require('../shared/db');
 const logger = require('../shared/logger');
@@ -23,6 +24,39 @@ const RESULTS_MD_PATH = path.join(__dirname, 'RESULTS.md');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureServerRunning() {
+  // 1. Ensure Origin Server (port 4000) is running
+  try {
+    await makeHttpRequest({ hostname: HOST, port: 4000, path: '/health', method: 'GET' });
+    console.log('🌐 Connected to running Origin Server on port 4000');
+  } catch (e) {
+    console.log('⚡ Origin not running on port 4000. Launching Origin child process...');
+    fork(path.join(__dirname, '../origin/index.js'), [], {
+      env: { ...process.env, PORT_ORIGIN: '4000' }
+    });
+    await sleep(1000);
+  }
+
+  // 2. Ensure Edge Nodes 1, 2, 3 (ports 3001, 3002, 3003) are running with latest code
+  for (let id = 1; id <= 3; id++) {
+    const edgePort = 3000 + id;
+    let isHealthy = false;
+    try {
+      const res = await makeHttpRequest({ hostname: HOST, port: edgePort, path: '/health', method: 'GET' });
+      if (res.statusCode === 200) isHealthy = true;
+    } catch (e) {}
+
+    if (!isHealthy) {
+      console.log(`⚡ Launching Edge ${id} child process on port ${edgePort}...`);
+      fork(path.join(__dirname, '../edge/index.js'), [], {
+        env: { ...process.env, EDGE_ID: String(id), PORT_EDGE: String(edgePort), BENCHMARK_MODE: 'true' }
+      });
+      await sleep(1000);
+    } else {
+      console.log(`🌐 Connected to Edge ${id} on port ${edgePort}`);
+    }
+  }
+
+  // 3. Ensure Load Balancer (port 3000) is running
   try {
     await makeHttpRequest({ hostname: HOST, port: LB_PORT, path: '/health', method: 'GET' });
     console.log('🌐 Connected to running Load Balancer on port ' + LB_PORT);
@@ -42,7 +76,15 @@ async function ensureServerRunning() {
 function makeHttpRequest(options, postData = null) {
   return new Promise((resolve, reject) => {
     const startTime = performance.now();
-    const req = http.request(options, (res) => {
+    const reqOptions = {
+      ...options,
+      agent: false,
+      headers: {
+        'Connection': 'close',
+        ...(options.headers || {})
+      }
+    };
+    const req = http.request(reqOptions, (res) => {
       let body = '';
       res.on('data', (chunk) => { body += chunk; });
       res.on('end', () => {
@@ -171,15 +213,25 @@ async function step3MissPass(files, spacingMs = 150) {
 // Step 4: Hit-latency pass (Re-request via query param to prevent CORS preflight noise)
 async function step4HitPass(missResults, spacingMs = 150) {
   console.log(`\n⚡ [Step 4] Executing Hit-Latency Pass (Direct Edge Request for cached files)...`);
+  
+  for (let id = 1; id <= 3; id++) {
+    const dir = path.join(__dirname, `../edge/cache/edge_${id}`);
+    const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    console.log(`🔍 DEBUG Disk Cache for Edge ${id} contains ${files.length} files:`, files.slice(0, 5));
+  }
+
   const hitResults = [];
 
   for (let i = 0; i < missResults.length; i++) {
     const { fileId, edgeId } = missResults[i];
     
+    const edgePort = 3000 + (edgeId || 1);
+    process.stdout.write(`   Hit Req ${i + 1}/${missResults.length} -> ID ${fileId} on Port ${edgePort} (Edge ${edgeId})\r`);
+
     const options = {
       hostname: HOST,
-      port: LB_PORT,
-      path: `/lb/file/${fileId}?edgeId=${edgeId}`,
+      port: edgePort,
+      path: `/edge/file/${fileId}`,
       method: 'GET'
     };
 

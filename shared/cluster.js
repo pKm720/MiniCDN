@@ -11,7 +11,7 @@ function getEdgeTarget(edgeId) {
     return { hostname: `edge${id}`, port: parseInt(process.env.PORT_EDGE || '3001', 10) };
   }
 
-  return { hostname: 'localhost', port: 3000 + id };
+  return { hostname: '127.0.0.1', port: 3000 + id };
 }
 
 module.exports = {

@@ -8,7 +8,7 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'minicdn',
   password: process.env.PGPASSWORD || 'postgres',
   port: parseInt(process.env.PGPORT || '5432', 10),
-  connectionTimeoutMillis: 2000
+  connectionTimeoutMillis: 200
 });
 
 const fs = require('fs');

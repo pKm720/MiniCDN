@@ -17,48 +17,55 @@ const STATE_FILE = path.join(__dirname, '.redis_state.json');
  */
 let useFallback = false;
 
-// Multi-process IPC file fallback helper
+let inMemoryState = null;
+let saveTimer = null;
+
 function loadState() {
+  if (inMemoryState) return inMemoryState;
   try {
     if (fs.existsSync(STATE_FILE)) {
       const data = fs.readFileSync(STATE_FILE, 'utf8');
-      return JSON.parse(data);
+      inMemoryState = JSON.parse(data);
+      if (!inMemoryState.sets) inMemoryState.sets = {};
+      if (!inMemoryState.hashes) inMemoryState.hashes = {};
+      if (!inMemoryState.kv) inMemoryState.kv = {};
+      return inMemoryState;
     }
   } catch (e) {}
-  return { sets: {}, hashes: {}, kv: {} };
+  inMemoryState = { sets: {}, hashes: {}, kv: {} };
+  return inMemoryState;
 }
 
 function saveState(newState) {
-  try {
-    let currentState = { sets: {}, hashes: {}, kv: {} };
-    if (fs.existsSync(STATE_FILE)) {
+  const currentState = loadState();
+  if (newState.sets) {
+    for (const sKey of Object.keys(newState.sets)) {
+      currentState.sets[sKey] = Array.from(new Set([...(currentState.sets[sKey] || []), ...newState.sets[sKey]]));
+    }
+  }
+  if (newState.hashes) {
+    for (const hKey of Object.keys(newState.hashes)) {
+      currentState.hashes[hKey] = { ...(currentState.hashes[hKey] || {}), ...newState.hashes[hKey] };
+    }
+  }
+  if (newState.kv) Object.assign(currentState.kv, newState.kv);
+
+  if (!saveTimer) {
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
       try {
-        const data = fs.readFileSync(STATE_FILE, 'utf8');
-        currentState = JSON.parse(data);
+        fs.writeFileSync(STATE_FILE, JSON.stringify(inMemoryState, null, 2), 'utf8');
       } catch (e) {}
-    }
-
-    if (!currentState.sets) currentState.sets = {};
-    if (!currentState.hashes) currentState.hashes = {};
-    if (!currentState.kv) currentState.kv = {};
-
-    const mergedSets = { ...currentState.sets, ...newState.sets };
-    const mergedHashes = { ...currentState.hashes };
-    for (const hKey of Object.keys(newState.hashes || {})) {
-      mergedHashes[hKey] = { ...(currentState.hashes[hKey] || {}), ...newState.hashes[hKey] };
-    }
-    const mergedKv = { ...currentState.kv, ...newState.kv };
-
-    const merged = { sets: mergedSets, hashes: mergedHashes, kv: mergedKv };
-    fs.writeFileSync(STATE_FILE, JSON.stringify(merged, null, 2), 'utf8');
-  } catch (e) {}
+    }, 100);
+  }
 }
 
 const redisClient = new Redis({
   host: REDIS_HOST,
   port: REDIS_PORT,
-  connectTimeout: 1000,
+  connectTimeout: 200,
   maxRetriesPerRequest: 1,
+  enableOfflineQueue: false,
   lazyConnect: true,
   retryStrategy(times) {
     if (times > 1) {
@@ -480,18 +487,18 @@ async function getEdgeHitMissStats(edgeId) {
 }
 
 async function resetTelemetryStats() {
-  try {
-    if (redisClient && typeof redisClient.set === 'function') {
+  if (!useFallback && redisClient && redisClient.status === 'ready') {
+    try {
       for (let id = 1; id <= 3; id++) {
         await redisClient.set(`edge:${id}:hits`, 0).catch(() => {});
         await redisClient.set(`edge:${id}:misses`, 0).catch(() => {});
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
 
   try {
     if (fs.existsSync(STATE_FILE)) {
-      fs.unlinkSync(STATE_FILE);
+      fs.writeFileSync(STATE_FILE, JSON.stringify({ sets: {}, hashes: {}, kv: {} }), 'utf8');
     }
   } catch (e) {}
 }

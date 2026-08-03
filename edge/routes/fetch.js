@@ -11,8 +11,7 @@ const replication = require('../../shared/replication');
 const MAX_CACHE_FILES = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
 const inFlightFetches = new Map(); // String(fileId) -> Promise
 
-function getCacheDir() {
-  const edgeId = process.env.EDGE_ID || 1;
+function getCacheDir(edgeId = 1) {
   const cacheDir = path.join(__dirname, `../cache/edge_${edgeId}`);
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
@@ -26,25 +25,10 @@ const ORIGIN_PORT = process.env.PORT_ORIGIN || 4000;
 router.get('/file/:id', async (req, res) => {
   const startTime = Date.now();
   const fileId = req.params.id;
-  const edgeId = process.env.EDGE_ID || 1;
-  const cacheDir = getCacheDir();
+  const headerEdgeId = req.headers['x-target-edge-id'] ? parseInt(req.headers['x-target-edge-id'], 10) : null;
+  const edgeId = headerEdgeId || parseInt(process.env.EDGE_ID || '1', 10);
+  const cacheDir = getCacheDir(edgeId);
   const cachePath = path.join(cacheDir, String(fileId));
-
-  // Check if file is currently being fetched from origin by a concurrent request
-  if (!fs.existsSync(cachePath) && inFlightFetches.has(String(fileId))) {
-    logger.info({ fileId, edgeId }, 'Concurrent request for uncached file — awaiting in-flight Origin fetch');
-    try {
-      await inFlightFetches.get(String(fileId));
-    } catch (e) {}
-
-    if (fs.existsSync(cachePath)) {
-      const duration = Date.now() - startTime;
-      res.setHeader('X-Cache-Status', 'HIT');
-      res.setHeader('X-Response-Time-Ms', duration);
-      redis.incrementEdgeHit(edgeId).catch(() => {});
-      return fs.createReadStream(cachePath).pipe(res);
-    }
-  }
 
   // Step 1: Check Local Cache Hit & TTL Expiration
   if (fs.existsSync(cachePath)) {
@@ -57,6 +41,9 @@ router.get('/file/:id', async (req, res) => {
     } else {
       logger.info({ fileId, edgeId }, 'Edge Cache HIT');
       const duration = Date.now() - startTime;
+      const stat = fs.statSync(cachePath);
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Length', stat.size);
       res.setHeader('X-Cache-Status', 'HIT');
       res.setHeader('X-Response-Time-Ms', duration);
 
@@ -79,14 +66,34 @@ router.get('/file/:id', async (req, res) => {
     }
   }
 
+  // Check if file is currently being fetched from origin by a concurrent request
+  const inFlightKey = `${edgeId}_${fileId}`;
+  if (!fs.existsSync(cachePath) && inFlightFetches.has(inFlightKey)) {
+    logger.info({ fileId, edgeId }, 'Concurrent request for uncached file — awaiting in-flight Origin fetch');
+    try {
+      await inFlightFetches.get(inFlightKey);
+    } catch (e) {}
+
+    if (fs.existsSync(cachePath)) {
+      const duration = Date.now() - startTime;
+      const stat = fs.statSync(cachePath);
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('X-Cache-Status', 'HIT');
+      res.setHeader('X-Response-Time-Ms', duration);
+      redis.incrementEdgeHit(edgeId).catch(() => {});
+      return fs.createReadStream(cachePath).pipe(res);
+    }
+  }
+
   // Register in-flight fetch promise for concurrent request deduplication
   let resolveInFlight, rejectInFlight;
-  if (!inFlightFetches.has(String(fileId))) {
+  if (!inFlightFetches.has(inFlightKey)) {
     const fetchPromise = new Promise((res, rej) => {
       resolveInFlight = res;
       rejectInFlight = rej;
     });
-    inFlightFetches.set(String(fileId), fetchPromise);
+    inFlightFetches.set(inFlightKey, fetchPromise);
   }
 
   // Step 2: Cache Miss — Call Origin Server
@@ -128,48 +135,39 @@ router.get('/file/:id', async (req, res) => {
       replication.triggerReplication(fileId).catch(err => logger.error({ err, fileId }, 'Replication trigger error'));
     }).catch(err => logger.error({ err }, 'Redis error'));
 
-    // Stream to temporary file to avoid incomplete cache entries on crash/error
-    const tempCachePath = path.join(cacheDir, `${fileId}.tmp`);
-    const fileWriteStream = fs.createWriteStream(tempCachePath);
+    const chunks = [];
+    originRes.on('data', (chunk) => {
+      chunks.push(chunk);
+      res.write(chunk);
+    });
 
-    originRes.pipe(fileWriteStream);
-    originRes.pipe(res);
-
-    fileWriteStream.on('finish', async () => {
+    originRes.on('end', async () => {
+      res.end();
       try {
         const isBenchmark = process.env.BENCHMARK_MODE === 'true' || process.env.BENCHMARK_MODE === '1';
         const configuredMax = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
         const maxCap = isBenchmark ? Math.max(configuredMax, 50) : configuredMax;
         await lru.evictIfFull(edgeId, cacheDir, maxCap);
-        
-        fs.rename(tempCachePath, cachePath, (err) => {
-          inFlightFetches.delete(String(fileId));
-          if (resolveInFlight) resolveInFlight();
 
-          if (err) {
-            logger.error({ err, fileId }, 'Failed to move temp cache file to cache path');
-          } else {
-            logger.info({ fileId, edgeId }, 'File cached successfully on Edge');
-            redis.addFileToEdge(fileId, edgeId).catch(e => logger.error({ e }, 'Redis error'));
-            redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
-            redis.setCacheTtl(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
-          }
-        });
-      } catch (evictErr) {
-        inFlightFetches.delete(String(fileId));
+        const fileBuffer = Buffer.concat(chunks);
+        fs.writeFileSync(cachePath, fileBuffer);
+        logger.info({ fileId, edgeId }, 'File cached successfully on Edge');
+
+        redis.addFileToEdge(fileId, edgeId).catch(e => logger.error({ e }, 'Redis error'));
+        redis.updateEdgeRecency(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
+        redis.setCacheTtl(edgeId, fileId, Date.now()).catch(e => logger.error({ e }, 'Redis error'));
+      } catch (err) {
+        logger.error({ err, fileId }, 'Failed to write cache file on Edge');
+      } finally {
+        inFlightFetches.delete(inFlightKey);
         if (resolveInFlight) resolveInFlight();
-        logger.error({ evictErr }, 'Error during LRU eviction check');
       }
     });
 
-    fileWriteStream.on('error', (err) => {
-      inFlightFetches.delete(String(fileId));
-      if (rejectInFlight) rejectInFlight();
-
-      logger.error({ err, fileId }, 'Error writing to temp cache file on Edge');
-      if (fs.existsSync(tempCachePath)) {
-        fs.unlink(tempCachePath, () => { });
-      }
+    originRes.on('error', (err) => {
+      inFlightFetches.delete(inFlightKey);
+      if (rejectInFlight) rejectInFlight(err);
+      logger.error({ err, fileId }, 'Error reading response from Origin');
     });
   });
 
