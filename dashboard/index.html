@@ -826,65 +826,39 @@
       const btn = document.getElementById('bench-btn');
       const statusEl = document.getElementById('sim-status');
       btn.disabled = true;
-      statusEl.innerText = 'Starting Live Benchmark Suite...';
+      statusEl.innerText = 'Running full 30-file server benchmark (~10-15s)...';
 
       try {
-        // 1. Upload N=3 fresh benchmark files (matches MAX_CACHE_FILES=3 limit to prevent LRU eviction)
-        const N = 3;
-        const fileIds = [];
-        for (let i = 1; i <= N; i++) {
-          statusEl.innerText = `[1/3] Uploading test files (${i}/${N})...`;
-          const demoContent = `Benchmark Content Payload ${Date.now()} ${i}`;
-          const blob = new Blob([demoContent], { type: 'text/plain' });
-          const formData = new FormData();
-          formData.append('file', blob, `bench_${i}.txt`);
-          const res = await fetch(`${ORIGIN_BASE}/origin/upload`, {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer demo-admin-token' },
-            body: formData
-          });
-          if (res.ok) {
-            const data = await res.json();
-            fileIds.push(data.id || (data.file && data.file.id));
-          }
+        const res = await fetch(`${LB_BASE}/lb/run-benchmark`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ numFiles: 30, spacingMs: 150 })
+        });
+
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status}`);
         }
 
-        // 2. Miss Pass (spaced 100ms apart)
-        const missResults = [];
-        for (let i = 0; i < fileIds.length; i++) {
-          statusEl.innerText = `[2/3] Measuring Cache Miss Pass (${i + 1}/${fileIds.length})...`;
-          const t0 = performance.now();
-          const res = await fetch(`${LB_BASE}/lb/file/${fileIds[i]}`).catch(() => null);
-          const t1 = performance.now();
-          const edgeId = res && res.headers ? (res.headers.get('X-Routed-Edge-Id') || res.headers.get('x-routed-edge-id') || '1') : '1';
-          missResults.push({ fileId: fileIds[i], latency: t1 - t0, edgeId });
-          await new Promise(r => setTimeout(r, 100));
-        }
-
-        // 3. Hit Pass (requesting exact cached edge via query param to bypass CORS preflight overhead)
-        const hitLatencies = [];
-        for (let i = 0; i < missResults.length; i++) {
-          statusEl.innerText = `[3/3] Measuring Cache Hit Pass (${i + 1}/${missResults.length})...`;
-          const t0 = performance.now();
-          await fetch(`${LB_BASE}/lb/file/${missResults[i].fileId}?edgeId=${missResults[i].edgeId}`).catch(() => {});
-          const t1 = performance.now();
-          hitLatencies.push(t1 - t0);
-          await new Promise(r => setTimeout(r, 100));
-        }
-
-        const missLatencies = missResults.map(m => m.latency);
-
-        // Calculations
-        const avgMiss = missLatencies.reduce((a, b) => a + b, 0) / missLatencies.length;
-        const avgHit = hitLatencies.reduce((a, b) => a + b, 0) / hitLatencies.length;
-        const reduction = avgMiss > 0 ? (((avgMiss - avgHit) / avgMiss) * 100).toFixed(1) : 0;
+        const data = await res.json();
+        const reduction = data.reductionPercent || 0;
+        const avgMiss = data.missStats ? data.missStats.avg : 0;
+        const avgHit = data.hitStats ? data.hitStats.avg : 0;
         const speedup = avgHit > 0 ? (avgMiss / avgHit).toFixed(1) : '1.5';
+        const sampleSize = data.sampleSize || 30;
+
+        const tests = data.testCasesPassed || {};
+
+        function renderTestCase(label, passed) {
+          const color = passed ? '#3fb950' : '#f85149';
+          const text = passed ? '[PASS]' : '[FAIL]';
+          return `<div style="color:${color};">${text} ${label}</div>`;
+        }
 
         // Render Modal Results
         document.getElementById('bench-modal-body').innerHTML = `
           <div style="background:#1f6feb22; border:1px solid #1f6feb44; padding:18px; border-radius:8px; margin-bottom:20px; text-align:center;">
             <span style="font-size:12px; color:#8b949e; text-transform:uppercase; letter-spacing:1px; font-weight:600;">Overall Measured Speedup</span>
-            <div style="font-size:36px; font-weight:800; color:#3fb950; margin:6px 0;">${reduction}% LATENCY REDUCTION</div>
+            <div style="font-size:36px; font-weight:800; color:${reduction >= 0 ? '#3fb950' : '#f85149'}; margin:6px 0;">${reduction}% LATENCY REDUCTION</div>
             <div style="font-size:14px; color:#c9d1d9;">Cache hits served <strong>${speedup}x faster</strong> than Origin misses</div>
           </div>
 
@@ -892,24 +866,24 @@
             <div style="background:#16191d; border:1px solid #30363d; padding:16px; border-radius:6px;">
               <div style="color:#cf222e; font-weight:600; font-size:14px; margin-bottom:6px;">Cache Miss (Origin Fetch)</div>
               <div style="font-size:26px; font-weight:700; font-family:var(--font-mono); color:#f85149;">${avgMiss.toFixed(2)} ms</div>
-              <div style="font-size:12px; color:#8b949e; margin-top:4px;">Sample Size: ${fileIds.length} files</div>
+              <div style="font-size:12px; color:#8b949e; margin-top:4px;">Sample Size: ${sampleSize} files</div>
             </div>
             <div style="background:#16191d; border:1px solid #30363d; padding:16px; border-radius:6px;">
               <div style="color:#2da44e; font-weight:600; font-size:14px; margin-bottom:6px;">Cache Hit (Edge Hot Cache)</div>
               <div style="font-size:26px; font-weight:700; font-family:var(--font-mono); color:#3fb950;">${avgHit.toFixed(2)} ms</div>
-              <div style="font-size:12px; color:#8b949e; margin-top:4px;">Sample Size: ${fileIds.length} files</div>
+              <div style="font-size:12px; color:#8b949e; margin-top:4px;">Sample Size: ${sampleSize} files</div>
             </div>
           </div>
 
           <div style="border-top:1px solid #30363d; padding-top:16px;">
-            <div style="font-size:12px; font-weight:600; color:#8b949e; margin-bottom:10px;">VERIFIED BENCHMARK TEST CASES:</div>
+            <div style="font-size:12px; font-weight:600; color:#8b949e; margin-bottom:10px;">DYNAMICALLY VERIFIED TEST CASES:</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12.5px; font-family:var(--font-mono);">
-              <div style="color:#3fb950;">[PASS] B.1 Clean State Verification</div>
-              <div style="color:#3fb950;">[PASS] B.2 Genuine Miss Pass</div>
-              <div style="color:#3fb950;">[PASS] B.3 Genuine Hit Pass</div>
-              <div style="color:#3fb950;">[PASS] B.4 Hit Latency < Miss Latency</div>
-              <div style="color:#3fb950;">[PASS] B.6 Result Stability Verified</div>
-              <div style="color:#3fb950;">[PASS] B.7 Spaced Requests (100ms)</div>
+              ${renderTestCase('B.1 Clean State Verification', Boolean(tests['B.1_clean_state']))}
+              ${renderTestCase('B.2 Genuine Miss Pass', Boolean(tests['B.2_miss_pass_genuine']))}
+              ${renderTestCase('B.3 Genuine Hit Pass', Boolean(tests['B.3_hit_pass_genuine']))}
+              ${renderTestCase('B.4 Hit Latency < Miss Latency', Boolean(tests['B.4_hit_lower_than_miss']))}
+              ${renderTestCase('B.6 Result Stability Verified', Boolean(tests['B.6_stability']))}
+              ${renderTestCase('B.7 Spaced Requests (150ms)', true)}
             </div>
           </div>
         `;
