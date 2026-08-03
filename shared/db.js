@@ -18,20 +18,41 @@ const DB_STATE_FILE = path.join(__dirname, '.db_state.json');
 
 /**
  * ARCHITECTURAL DESIGN NOTE / KNOWN LIMITATION:
- * Once `useFallback = true` is tripped by a database connection failure, the process degrades
- * to the file-backed IPC JSON state file (.db_state.json) for the duration of its lifecycle
- * to ensure state consistency and prevent split-brain writes between PostgreSQL and file fallback.
- * Production enhancement: Implement a background health ping timer that re-establishes PostgreSQL
- * connection and backfills/promotes offline state deltas upon recovery.
+ * When PostgreSQL connection fails, `useFallback = true` switches to the file-backed IPC JSON state file (.db_state.json).
+ * A background health check periodically tests the PostgreSQL connection every 15s.
+ * Once PostgreSQL recovers (2 consecutive successful pings), the system automatically resumes using PostgreSQL.
+ * Note: Data written during the fallback window is not retroactively replayed on recovery.
  */
 let useFallback = false;
+let consecutiveDbPings = 0;
+
+setInterval(async () => {
+  if (useFallback) {
+    try {
+      await pool.query('SELECT 1');
+      consecutiveDbPings++;
+      if (consecutiveDbPings >= 2) {
+        useFallback = false;
+        consecutiveDbPings = 0;
+        logger.info('PostgreSQL connection recovered. Switching from fallback to PostgreSQL (Note: fallback-window writes are not retroactively replayed).');
+      }
+    } catch (e) {
+      consecutiveDbPings = 0;
+    }
+  } else {
+    consecutiveDbPings = 0;
+  }
+}, 15000).unref();
 
 function loadDbState() {
   try {
     if (fs.existsSync(DB_STATE_FILE)) {
       const data = fs.readFileSync(DB_STATE_FILE, 'utf8');
       const parsed = JSON.parse(data);
+      if (!parsed.files) parsed.files = [];
+      if (!parsed.edges) parsed.edges = [];
       if (!parsed.request_logs) parsed.request_logs = [];
+      if (typeof parsed.autoId !== 'number') parsed.autoId = 1;
       return parsed;
     }
   } catch (e) {}

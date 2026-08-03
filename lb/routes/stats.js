@@ -162,7 +162,9 @@ router.get('/stats', async (req, res) => {
       totalHits,
       totalMisses,
       totalRequests,
+      hitRatio: overallHitRatio,
       overallHitRatio,
+      clusterHitRatio: overallHitRatio,
       healthyEdgesCount,
       totalEdgesCount: edgesBreakdown.length,
       edges: edgesBreakdown
@@ -179,7 +181,7 @@ router.post('/reset', async (req, res) => {
 
   try {
     if (redis && typeof redis.resetTelemetryStats === 'function') {
-      try { await redis.resetTelemetryStats(); } catch (e) {}
+      try { await redis.resetTelemetryStats(isDeep); } catch (e) {}
     }
   } catch (e) {}
 
@@ -187,19 +189,15 @@ router.post('/reset', async (req, res) => {
     if (db && typeof db.query === 'function') {
       try { await db.query('TRUNCATE request_logs RESTART IDENTITY CASCADE'); } catch (e) {}
       if (isDeep) {
+        try { await db.query('UPDATE files SET download_count = 0'); } catch (e) {}
         try { await db.query('TRUNCATE files RESTART IDENTITY CASCADE'); } catch (e) {}
       }
     }
   } catch (e) {}
 
   if (isDeep) {
-    // 1. Wipe Redis state file & db state file
-    const redisStateFile = path.join(__dirname, '../../shared/.redis_state.json');
-    const dbStateFile = path.join(__dirname, '../../shared/.db_state.json');
-    try { if (fs.existsSync(redisStateFile)) fs.writeFileSync(redisStateFile, JSON.stringify({ sets: {}, hashes: {}, kv: {} }), 'utf8'); } catch (e) {}
-    try { if (fs.existsSync(dbStateFile)) fs.writeFileSync(dbStateFile, JSON.stringify({ files: [], request_logs: [] }), 'utf8'); } catch (e) {}
-
-    // 2. Clear edge disk cache directories & notify edge containers via RPC
+    // Notify all edge nodes via RPC HTTP purge notification to clear telemetry & cache
+    const purgePromises = [];
     for (let id = 1; id <= 3; id++) {
       // Local container filesystem cleanup fallback
       const edgeDir = path.join(__dirname, `../../edge/cache/edge_${id}`);
@@ -215,19 +213,35 @@ router.post('/reset', async (req, res) => {
       }
 
       // RPC HTTP purge notification to edge container
-      try {
-        const target = cluster.getEdgeTarget(id);
-        const purgeReq = http.request({
-          hostname: target.hostname,
-          port: target.port,
-          path: '/edge/purge',
-          method: 'POST',
-          timeout: 1500
-        });
-        purgeReq.on('error', () => {});
-        purgeReq.end();
-      } catch (e) {}
+      purgePromises.push(new Promise((resolve) => {
+        try {
+          const target = cluster.getEdgeTarget(id);
+          const purgeReq = http.request({
+            hostname: target.hostname,
+            port: target.port,
+            path: '/edge/purge',
+            method: 'POST',
+            timeout: 1500
+          }, (res) => {
+            res.on('data', () => {});
+            res.on('end', resolve);
+          });
+          purgeReq.on('error', () => resolve());
+          purgeReq.on('timeout', () => { purgeReq.destroy(); resolve(); });
+          purgeReq.end();
+        } catch (e) { resolve(); }
+      }));
     }
+
+    await Promise.all(purgePromises);
+  }
+
+  if (isDeep) {
+    // 1. Wipe Redis state file & db state file
+    const redisStateFile = path.join(__dirname, '../../shared/.redis_state.json');
+    const dbStateFile = path.join(__dirname, '../../shared/.db_state.json');
+    try { if (fs.existsSync(redisStateFile)) fs.writeFileSync(redisStateFile, JSON.stringify({ sets: {}, hashes: {}, kv: {} }), 'utf8'); } catch (e) {}
+    try { if (fs.existsSync(dbStateFile)) fs.writeFileSync(dbStateFile, JSON.stringify({ files: [], edges: [], request_logs: [], autoId: 1 }), 'utf8'); } catch (e) {}
 
     // 3. Clear origin storage directory
     const originDir = path.join(__dirname, '../../origin/storage');

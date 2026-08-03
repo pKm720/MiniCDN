@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 require('dotenv').config();
 const logger = require('../shared/logger');
 const db = require('../shared/db');
@@ -28,15 +29,35 @@ app.use((req, res, next) => {
 app.use('/dashboard', express.static(path.join(__dirname, '../dashboard')));
 app.use('/cdn-dashboard', express.static(path.join(__dirname, '../../CDN_FrontEnd')));
 
-const originUpload = require('../origin/routes/upload');
-const topFiles = require('../origin/routes/top_files');
+const ORIGIN_HOST = process.env.ORIGIN_HOST || 'localhost';
+const PORT_ORIGIN = process.env.PORT_ORIGIN || 4000;
 
+// Proxy upload requests to Origin server so file is saved in Origin container storage
+app.post('/origin/upload', (req, res) => {
+  const proxyReq = http.request({
+    hostname: ORIGIN_HOST,
+    port: PORT_ORIGIN,
+    path: '/origin/upload',
+    method: 'POST',
+    headers: req.headers
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+  proxyReq.on('error', (err) => {
+    logger.error({ err: err.message }, 'Failed to proxy upload to Origin');
+    if (!res.headersSent) res.status(502).json({ error: 'Origin unreachable' });
+  });
+  req.pipe(proxyReq);
+});
+
+const topFiles = require('../origin/routes/top_files');
 const benchmarkRoutes = require('./routes/benchmark');
 
 app.use('/lb', heartbeatRoutes);
 app.use('/lb', statsRoutes);
 app.use('/lb', benchmarkRoutes);
-app.use('/origin', originUpload);
+
 app.use('/origin', topFiles);
 app.use('/lb', lbRouter);
 

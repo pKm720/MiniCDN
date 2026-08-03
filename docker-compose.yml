@@ -127,6 +127,8 @@ services:
     environment:
       IS_DOCKER: "true"
       PORT_LB: 3000
+      ORIGIN_HOST: origin
+      PORT_ORIGIN: 4000
       PGHOST: postgres
       REDIS_HOST: redis
       JWT_SECRET: "supersecret-cdn-key"
@@ -142,6 +144,7 @@ services:
       - ./lb:/app/lb
       - ./dashboard:/app/dashboard
       - ./shared:/app/shared
+      - ./benchmark:/app/benchmark
 
 volumes:
   postgres_data:

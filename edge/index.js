@@ -59,8 +59,8 @@ function startHeartbeatLoop() {
 }
 
 async function startServer() {
-  app.listen(PORT, () => {
-    logger.info(`Edge Server ${EDGE_ID} running on port ${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    logger.info(`Edge Server ${EDGE_ID} running on port ${PORT} (0.0.0.0)`);
     startHeartbeatLoop();
   });
 }

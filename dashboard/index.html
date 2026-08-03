@@ -680,7 +680,8 @@
     }
 
     function renderChartAndSummary(stats) {
-      const hitRatioPct = ((stats.clusterHitRatio || 0) * 100).toFixed(1) + '%';
+      const ratio = stats.hitRatio !== undefined ? stats.hitRatio : (stats.overallHitRatio !== undefined ? stats.overallHitRatio : (stats.clusterHitRatio || 0));
+      const hitRatioPct = (ratio * 100).toFixed(1) + '%';
       document.getElementById('overall-hit-ratio').innerText = hitRatioPct;
       document.getElementById('top-hit-ratio').innerText = hitRatioPct;
       document.getElementById('overall-total-reqs').innerText = (stats.totalRequests || 0).toLocaleString();

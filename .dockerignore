@@ -6,3 +6,4 @@ npm-debug.log
 .redis_state.json
 edge/cache
 origin/storage
+scratch

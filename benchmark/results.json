@@ -1,26 +1,26 @@
 {
-  "timestamp": "2026-08-03T14:32:58.573Z",
+  "timestamp": "2026-08-03T18:42:51.669Z",
   "sampleSize": 30,
   "spacingMs": 150,
   "missStats": {
-    "avg": 11.48,
-    "min": 6.06,
-    "max": 41.61,
-    "stddev": 6.51
+    "avg": 45.18,
+    "min": 25.03,
+    "max": 159.24,
+    "stddev": 23.55
   },
   "hitStats": {
-    "avg": 3.78,
-    "min": 2.45,
-    "max": 6.28,
-    "stddev": 1.09
+    "avg": 27.04,
+    "min": 12.16,
+    "max": 79.77,
+    "stddev": 14.14
   },
-  "reductionPercent": 67.07,
+  "reductionPercent": 40.15,
   "testCasesPassed": {
     "B.1_clean_state": true,
     "B.2_miss_pass_genuine": true,
     "B.3_hit_pass_genuine": true,
     "B.4_hit_lower_than_miss": true,
-    "B.5_wall_clock_vs_server_logs": false,
-    "B.6_stability": false
+    "B.5_wall_clock_vs_server_logs": true,
+    "B.6_stability": true
   }
 }

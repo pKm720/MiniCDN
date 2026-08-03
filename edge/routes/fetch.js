@@ -93,6 +93,7 @@ router.get('/file/:id', async (req, res) => {
       resolveInFlight = res;
       rejectInFlight = rej;
     });
+    fetchPromise.catch(() => {});
     inFlightFetches.set(inFlightKey, fetchPromise);
   }
 
@@ -101,9 +102,11 @@ router.get('/file/:id', async (req, res) => {
 
   const originUrl = `http://${ORIGIN_HOST}:${ORIGIN_PORT}/origin/file/${fileId}`;
 
-  const originReq = http.get(originUrl, (originRes) => {
+  const originReq = http.get(originUrl, { agent: false, headers: { 'Connection': 'close' } }, (originRes) => {
     if (originRes.statusCode === 404) {
       logger.warn({ fileId }, 'Origin returned 404 for file');
+      inFlightFetches.delete(inFlightKey);
+      if (resolveInFlight) resolveInFlight();
       const duration = Date.now() - startTime;
       res.setHeader('X-Cache-Status', 'MISS');
       res.setHeader('X-Response-Time-Ms', duration);
@@ -112,6 +115,8 @@ router.get('/file/:id', async (req, res) => {
 
     if (originRes.statusCode !== 200) {
       logger.error({ fileId, statusCode: originRes.statusCode }, 'Origin returned error status');
+      inFlightFetches.delete(inFlightKey);
+      if (resolveInFlight) resolveInFlight();
       const duration = Date.now() - startTime;
       res.setHeader('X-Cache-Status', 'MISS');
       res.setHeader('X-Response-Time-Ms', duration);
@@ -142,7 +147,6 @@ router.get('/file/:id', async (req, res) => {
     });
 
     originRes.on('end', async () => {
-      res.end();
       try {
         const isBenchmark = process.env.BENCHMARK_MODE === 'true' || process.env.BENCHMARK_MODE === '1';
         const configuredMax = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
@@ -161,19 +165,23 @@ router.get('/file/:id', async (req, res) => {
       } finally {
         inFlightFetches.delete(inFlightKey);
         if (resolveInFlight) resolveInFlight();
+        res.end();
       }
     });
 
     originRes.on('error', (err) => {
       inFlightFetches.delete(inFlightKey);
-      if (rejectInFlight) rejectInFlight(err);
+      if (resolveInFlight) resolveInFlight();
       logger.error({ err, fileId }, 'Error reading response from Origin');
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Error reading response from Origin' });
+      }
     });
   });
 
   originReq.on('error', (err) => {
-    inFlightFetches.delete(String(fileId));
-    if (rejectInFlight) rejectInFlight();
+    inFlightFetches.delete(inFlightKey);
+    if (resolveInFlight) resolveInFlight();
     logger.error({ err: err.message, fileId }, 'Origin server unreachable from Edge');
     const duration = Date.now() - startTime;
     if (!res.headersSent) {

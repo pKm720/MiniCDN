@@ -36,8 +36,8 @@ async function startServer() {
   try {
     await db.initDb();
     syncDownloads.startDownloadSync(parseInt(process.env.DOWNLOAD_SYNC_INTERVAL_MS || '30000', 10));
-    app.listen(PORT, () => {
-      logger.info(`Origin Server running on port ${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`Origin Server running on port ${PORT} (0.0.0.0)`);
     });
   } catch (err) {
     logger.error({ err }, 'Failed to start Origin Server');

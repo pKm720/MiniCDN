@@ -40,14 +40,11 @@ async function triggerReplication(fileId, targetEdges = [1, 2, 3]) {
   }
 
   const filename = dbRes.rows[0].filename;
-  let localStoragePath = path.join(ORIGIN_STORAGE_DIR, filename);
+  // Files in Origin storage are stored by numeric ID, not original filename
+  const localStoragePath = path.join(ORIGIN_STORAGE_DIR, fId);
   if (!fs.existsSync(localStoragePath)) {
-    // Fallback search by ID
-    localStoragePath = path.join(ORIGIN_STORAGE_DIR, fId);
-    if (!fs.existsSync(localStoragePath)) {
-      logger.warn({ fileId: fId, filename }, 'Cannot replicate — file missing from origin storage disk');
-      return { replicated: false, reason: 'file_missing_from_disk' };
-    }
+    logger.warn({ fileId: fId, filename }, 'Cannot replicate — file missing from origin storage disk');
+    return { replicated: false, reason: 'file_missing_from_disk' };
   }
 
   logger.info({ fileId: fId, count, threshold, missingEdges }, 'Replication threshold crossed! Proactively pushing file to missing edges...');

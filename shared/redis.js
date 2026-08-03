@@ -10,54 +10,31 @@ const STATE_FILE = path.join(__dirname, '.redis_state.json');
 
 /**
  * ARCHITECTURAL DESIGN NOTE / KNOWN LIMITATION:
- * Once `useFallback = true` is tripped by Redis unreachability, key operations degrade to the local
- * IPC state file (.redis_state.json) for process lifetime stability to maintain write consistency.
- * Production enhancement: Implement a lazy reconnection strategy with a probing background timer
- * that flushes offline key deltas back to Redis upon recovery.
+ * When Redis is unreachable, `useFallback = true` switches to local IPC state file (.redis_state.json).
+ * A background check periodically attempts to ping Redis every 15s.
+ * Once Redis recovers (2 consecutive successful pings), the system automatically resumes using Redis.
+ * Note: Data written during the fallback window is not retroactively replayed on recovery.
  */
 let useFallback = false;
 
-let inMemoryState = null;
-let saveTimer = null;
-
 function loadState() {
-  if (inMemoryState) return inMemoryState;
   try {
     if (fs.existsSync(STATE_FILE)) {
       const data = fs.readFileSync(STATE_FILE, 'utf8');
-      inMemoryState = JSON.parse(data);
-      if (!inMemoryState.sets) inMemoryState.sets = {};
-      if (!inMemoryState.hashes) inMemoryState.hashes = {};
-      if (!inMemoryState.kv) inMemoryState.kv = {};
-      return inMemoryState;
+      const parsed = JSON.parse(data);
+      if (!parsed.sets) parsed.sets = {};
+      if (!parsed.hashes) parsed.hashes = {};
+      if (!parsed.kv) parsed.kv = {};
+      return parsed;
     }
   } catch (e) {}
-  inMemoryState = { sets: {}, hashes: {}, kv: {} };
-  return inMemoryState;
+  return { sets: {}, hashes: {}, kv: {} };
 }
 
 function saveState(newState) {
-  const currentState = loadState();
-  if (newState.sets) {
-    for (const sKey of Object.keys(newState.sets)) {
-      currentState.sets[sKey] = Array.from(new Set([...(currentState.sets[sKey] || []), ...newState.sets[sKey]]));
-    }
-  }
-  if (newState.hashes) {
-    for (const hKey of Object.keys(newState.hashes)) {
-      currentState.hashes[hKey] = { ...(currentState.hashes[hKey] || {}), ...newState.hashes[hKey] };
-    }
-  }
-  if (newState.kv) Object.assign(currentState.kv, newState.kv);
-
-  if (!saveTimer) {
-    saveTimer = setTimeout(() => {
-      saveTimer = null;
-      try {
-        fs.writeFileSync(STATE_FILE, JSON.stringify(inMemoryState, null, 2), 'utf8');
-      } catch (e) {}
-    }, 100);
-  }
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(newState, null, 2), 'utf8');
+  } catch (e) {}
 }
 
 const redisClient = new Redis({
@@ -81,6 +58,30 @@ const redisClient = new Redis({
 redisClient.on('error', () => {
   useFallback = true;
 });
+
+let consecutiveRedisPings = 0;
+setInterval(async () => {
+  if (useFallback) {
+    try {
+      if (redisClient.status === 'end' || redisClient.status === 'close') {
+        await redisClient.connect().catch(() => {});
+      }
+      const res = await redisClient.ping();
+      if (res === 'PONG') {
+        consecutiveRedisPings++;
+        if (consecutiveRedisPings >= 2) {
+          useFallback = false;
+          consecutiveRedisPings = 0;
+          logger.info('Redis connection recovered. Switching from fallback to Redis (Note: fallback-window writes are not retroactively replayed).');
+        }
+      }
+    } catch (e) {
+      consecutiveRedisPings = 0;
+    }
+  } else {
+    consecutiveRedisPings = 0;
+  }
+}, 15000).unref();
 
 async function initRedis() {
   try {
@@ -486,21 +487,36 @@ async function getEdgeHitMissStats(edgeId) {
   return { hits: hitsVal, misses: missesVal };
 }
 
-async function resetTelemetryStats() {
-  if (!useFallback && redisClient && redisClient.status === 'ready') {
+async function resetTelemetryStats(isDeep = false) {
+  if (redisClient) {
     try {
       for (let id = 1; id <= 3; id++) {
         await redisClient.set(`edge:${id}:hits`, 0).catch(() => {});
         await redisClient.set(`edge:${id}:misses`, 0).catch(() => {});
+        if (isDeep) {
+          await redisClient.del(`edge:${id}:cache`).catch(() => {});
+          await redisClient.del(`edge:${id}:ttl`).catch(() => {});
+        }
+      }
+      if (isDeep) {
+        const dlKeys = await redisClient.keys('file:*').catch(() => []);
+        if (dlKeys && dlKeys.length > 0) {
+          await redisClient.del(dlKeys).catch(() => {});
+        }
       }
     } catch (e) {}
   }
 
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      fs.writeFileSync(STATE_FILE, JSON.stringify({ sets: {}, hashes: {}, kv: {} }), 'utf8');
+  if (isDeep) {
+    saveState({ sets: {}, hashes: {}, kv: {} });
+  } else {
+    const state = loadState();
+    for (let id = 1; id <= 3; id++) {
+      state.kv[`edge:${id}:hits`] = "0";
+      state.kv[`edge:${id}:misses`] = "0";
     }
-  } catch (e) {}
+    saveState(state);
+  }
 }
 
 module.exports = {
