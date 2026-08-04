@@ -412,14 +412,34 @@ async function step6GenerateReport(missResults, hitResults, spacingMs = 150, wri
   return reportData;
 }
 
+async function warmUp(rounds = 3) {
+  console.log(`\n🔥 [Warm-up] Firing ${rounds} throwaway requests to prime connections/JIT...`);
+  const lb = cluster.getLbTarget();
+  for (let i = 0; i < rounds; i++) {
+    try {
+      await makeHttpRequest({
+        hostname: lb.hostname,
+        port: lb.port,
+        path: '/health',
+        method: 'GET'
+      });
+    } catch (e) {
+      // ignore — this is just warm-up, not a measurement
+    }
+    await sleep(50);
+  }
+}
+
 // Exported main reusable function
-async function runBenchmark({ numFiles = 30, spacingMs = 150, writeFiles = true } = {}) {
+async function runBenchmark({ numFiles = 50, spacingMs = 150, writeFiles = true } = {}) {
   await ensureServerRunning();
   await clearAllCaches();
   const files = await step1UploadFiles(numFiles);
   if (files.length === 0) {
     throw new Error('No files were uploaded. Exiting benchmark.');
   }
+
+  await warmUp(3);
 
   const missResults = await step3MissPass(files, spacingMs);
   const hitResults = await step4HitPass(missResults, spacingMs);
@@ -434,7 +454,7 @@ async function main() {
   console.log('=================================================');
 
   try {
-    const numFiles = parseInt(process.env.NUM_FILES || '30', 10);
+    const numFiles = parseInt(process.env.NUM_FILES || '50', 10);
     const spacingMs = parseInt(process.env.SPACING_MS || '150', 10);
 
     await runBenchmark({ numFiles, spacingMs, writeFiles: true });

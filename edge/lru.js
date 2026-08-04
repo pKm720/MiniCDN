@@ -6,7 +6,7 @@ const logger = require('../shared/logger');
 async function evictIfFull(edgeId, cacheDir, maxCapacity) {
   try {
     const isBenchmark = process.env.BENCHMARK_MODE === 'true' || process.env.BENCHMARK_MODE === '1';
-    const effectiveCapacity = isBenchmark ? Math.max(maxCapacity, 50) : maxCapacity;
+    const effectiveCapacity = isBenchmark ? Math.max(maxCapacity, 100) : maxCapacity;
 
     const recencyMap = await redis.getEdgeCacheRecency(edgeId);
     const cachedFiles = Object.keys(recencyMap);

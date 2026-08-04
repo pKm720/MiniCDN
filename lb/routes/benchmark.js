@@ -11,7 +11,7 @@ router.post('/run-benchmark', async (req, res) => {
   process.env.BENCHMARK_MODE = 'true';
 
   try {
-    const numFiles = parseInt(req.body && req.body.numFiles || req.query.numFiles || '30', 10);
+    const numFiles = parseInt(req.body && req.body.numFiles || req.query.numFiles || '50', 10);
     const spacingMs = parseInt(req.body && req.body.spacingMs || req.query.spacingMs || '150', 10);
 
     const reportData = await runBenchmark({

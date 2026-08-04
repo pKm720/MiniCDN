@@ -104,7 +104,7 @@ router.post('/purge', async (req, res) => {
 
   try {
     if (redis && typeof redis.resetTelemetryStats === 'function') {
-      await redis.resetTelemetryStats();
+      await redis.resetTelemetryStats(true);
     }
   } catch (e) {}
 

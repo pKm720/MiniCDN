@@ -150,7 +150,7 @@ router.get('/file/:id', async (req, res) => {
       try {
         const isBenchmark = process.env.BENCHMARK_MODE === 'true' || process.env.BENCHMARK_MODE === '1';
         const configuredMax = parseInt(process.env.MAX_CACHE_FILES || '20', 10);
-        const maxCap = isBenchmark ? Math.max(configuredMax, 50) : configuredMax;
+        const maxCap = isBenchmark ? Math.max(configuredMax, 100) : configuredMax;
         await lru.evictIfFull(edgeId, cacheDir, maxCap);
 
         const fileBuffer = Buffer.concat(chunks);

@@ -1,20 +1,20 @@
 {
-  "timestamp": "2026-08-03T18:42:51.669Z",
-  "sampleSize": 30,
+  "timestamp": "2026-08-04T09:30:51.290Z",
+  "sampleSize": 50,
   "spacingMs": 150,
   "missStats": {
-    "avg": 45.18,
-    "min": 25.03,
-    "max": 159.24,
-    "stddev": 23.55
+    "avg": 28.55,
+    "min": 18.38,
+    "max": 52.69,
+    "stddev": 7.05
   },
   "hitStats": {
-    "avg": 27.04,
-    "min": 12.16,
-    "max": 79.77,
-    "stddev": 14.14
+    "avg": 19.53,
+    "min": 10.27,
+    "max": 53.05,
+    "stddev": 8.91
   },
-  "reductionPercent": 40.15,
+  "reductionPercent": 31.59,
   "testCasesPassed": {
     "B.1_clean_state": true,
     "B.2_miss_pass_genuine": true,

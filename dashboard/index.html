@@ -827,13 +827,13 @@
       const btn = document.getElementById('bench-btn');
       const statusEl = document.getElementById('sim-status');
       btn.disabled = true;
-      statusEl.innerText = 'Running full 30-file server benchmark (~10-15s)...';
+      statusEl.innerText = 'Running full 50-file server benchmark (~15-20s)...';
 
       try {
         const res = await fetch(`${LB_BASE}/lb/run-benchmark`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ numFiles: 30, spacingMs: 150 })
+          body: JSON.stringify({ numFiles: 50, spacingMs: 150 })
         });
 
         if (!res.ok) {
